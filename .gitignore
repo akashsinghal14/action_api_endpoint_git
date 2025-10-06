@@ -1,0 +1,117 @@
+# Environment variables
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Database
+*.db
+*.sqlite3
+
+# Test coverage
+htmlcov/
+.coverage
+.pytest_cache/
+
+# Test files
+test_*.py
+*_test.py
+tests/
+
+# Reference/example code (if not needed in production)
+reference_code/
+
+# Screenshots and images
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.svg
+
+# Documentation that might contain sensitive info
+SECURE_API_KEYS.md
+
+# Temporary files
+*.tmp
+*.temp
+*.swp
+*.swo
+*~
+
+# Backup files
+*.bak
+*.backup
+*.old
+
+# IDE and editor files
+.vscode/
+.idea/
+*.sublime-*
+.atom/
+.brackets.json
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Flask specific
+instance/
+.webassets-cache
+
+# Environment specific
+.env.local
+.env.development
+.env.test
+.env.production
+
+
+#otherfiles
+check_available_models.py
+env_claude.example

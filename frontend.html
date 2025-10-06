@@ -1,0 +1,804 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fire Door Survey - Python API Frontend</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            font-size: 1.1rem;
+            opacity: 0.9;
+        }
+
+        .form-container {
+            padding: 40px;
+        }
+
+        .form-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 40px;
+            margin-bottom: 30px;
+        }
+
+        .form-section {
+            background: #f8f9fa;
+            padding: 25px;
+            border-radius: 10px;
+            border-left: 4px solid #ff6b6b;
+        }
+
+        .form-section h2 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+            font-size: 1.3rem;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #34495e;
+        }
+
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e1e8ed;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s ease;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #ff6b6b;
+        }
+
+        /* Compliance grid CSS removed as compliance check is no longer needed */
+
+        /* Toggle switch CSS removed as compliance check is no longer needed */
+
+        .api-config {
+            background: #e8f4fd;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 30px;
+            border-left: 4px solid #3498db;
+        }
+
+        .api-config h3 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+        }
+
+        .api-config-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .submit-section {
+            text-align: center;
+            margin-top: 30px;
+        }
+
+        .submit-btn {
+            background: linear-gradient(135deg, #ff6b6b, #ee5a24);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            font-size: 1.1rem;
+            border-radius: 50px;
+            cursor: pointer;
+            transition: transform 0.3s ease;
+            font-weight: 600;
+        }
+
+        .submit-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .submit-btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .results-section {
+            margin-top: 30px;
+            padding: 30px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            display: none;
+        }
+
+        .results-section h2 {
+            color: #2c3e50;
+            margin-bottom: 20px;
+        }
+
+        .action-item {
+            background: white;
+            padding: 20px;
+            margin-bottom: 15px;
+            border-radius: 8px;
+            border-left: 4px solid #ff6b6b;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .action-item-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .severity {
+            padding: 5px 12px;
+            border-radius: 20px;
+            font-weight: 600;
+            font-size: 0.9rem;
+        }
+
+        .severity.high {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        .severity.medium {
+            background: #fff3e0;
+            color: #ef6c00;
+        }
+
+        .severity.low {
+            background: #e8f5e8;
+            color: #2e7d32;
+        }
+
+        .category {
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .due-date {
+            color: #7f8c8d;
+            font-size: 0.9rem;
+        }
+
+        .confidence-score {
+            color: #3498db;
+            font-weight: 600;
+        }
+
+        .remediation-options {
+            margin-top: 15px;
+        }
+
+        .remediation-options h4 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+
+        .remediation-option {
+            background: #f8f9fa;
+            padding: 15px;
+            margin-bottom: 10px;
+            border-radius: 6px;
+            border-left: 3px solid #3498db;
+        }
+
+        .remediation-option h5 {
+            color: #2c3e50;
+            margin-bottom: 8px;
+        }
+
+        .option-plan {
+            color: #555;
+            margin-bottom: 8px;
+            line-height: 1.5;
+        }
+
+        /* Cost styling removed as costs are no longer displayed */
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #ff6b6b;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .error {
+            color: #e74c3c;
+            background: #ffebee;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+
+        .success {
+            color: #27ae60;
+            background: #e8f5e8;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+
+        .field-error {
+            color: #e74c3c;
+            font-size: 12px;
+            margin-top: 5px;
+        }
+
+        @media (max-width: 768px) {
+            .form-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .compliance-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .api-config-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1><i class="fas fa-robot"></i> Fire Door Survey - Python API</h1>
+            <p>UK Compliance Assessment Tool with Separate API Endpoints</p>
+        </div>
+
+        <div class="form-container">
+            <!-- API Configuration -->
+            <div class="api-config">
+                <h3><i class="fas fa-cog"></i> API Configuration</h3>
+                <div class="api-config-grid">
+                    <div class="form-group">
+                        <label for="apiBaseUrl">API Base URL</label>
+                        <input type="text" id="apiBaseUrl" value="http://localhost:5000/api" placeholder="http://localhost:5000/api">
+                    </div>
+                    <div class="form-group">
+                        <label for="openaiKey">OpenAI API Key (Optional)</label>
+                        <input type="password" id="openaiKey" placeholder="Enter your OpenAI API key for AI analysis">
+                    </div>
+                </div>
+            </div>
+
+            <form id="fireDoorForm">
+                <div class="form-grid">
+                    <!-- Left Column -->
+                    <div class="left-column">
+                        <!-- Fire Rating and Certification -->
+                        <div class="form-section">
+                            <h2>Fire Rating and Certification</h2>
+                            <div class="form-group">
+                                <label for="fireResistance">Fire Resistance *</label>
+                                <select id="fireResistance" name="fireResistance" required>
+                                    <option value="">Select</option>
+                                    <option value="FD30">FD30</option>
+                                    <option value="FD60">FD60</option>
+                                    <option value="FD90">FD90</option>
+                                    <option value="FD120">FD120</option>
+                                    <option value="Unknown">Unknown</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Physical Measurements - Gaps -->
+                        <div class="form-section">
+                            <h2>Physical Measurements - Gaps</h2>
+                            <div class="form-group">
+                                <label for="headGap">Head Gap (mm) *</label>
+                                <input type="number" id="headGap" name="headGap" min="0" max="100" step="1" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="hingeGap">Hinge Gap (mm) *</label>
+                                <input type="number" id="hingeGap" name="hingeGap" min="0" max="100" step="1" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="closingGap">Closing Gap (mm) *</label>
+                                <input type="number" id="closingGap" name="closingGap" min="0" max="100" step="1" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="thresholdGap">Threshold Gap (mm) *</label>
+                                <input type="number" id="thresholdGap" name="thresholdGap" min="0" max="100" step="1" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="doorThickness">Door Thickness (mm) *</label>
+                                <input type="number" id="doorThickness" name="doorThickness" min="20" max="200" step="1" required>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Right Column -->
+                    <div class="right-column">
+                        <!-- Compliance Check section removed as requested -->
+
+                        <!-- Additional Comments section removed as requested -->
+                    </div>
+                </div>
+
+                <!-- Submit Button -->
+                <div class="submit-section">
+                    <button type="submit" class="submit-btn">
+                        <i class="fas fa-paper-plane"></i> Analyze Survey Data
+                    </button>
+                </div>
+            </form>
+
+            <!-- Results Section -->
+            <div id="resultsSection" class="results-section">
+                <h2><i class="fas fa-chart-line"></i> Analysis Results</h2>
+                <div id="resultsContent">
+                    <!-- Results will be populated here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // API Configuration
+        const API_BASE_URL = 'http://localhost:5000/api';
+        
+        // DOM Elements
+        const form = document.getElementById('fireDoorForm');
+        const resultsSection = document.getElementById('resultsSection');
+        const resultsContent = document.getElementById('resultsContent');
+        const apiBaseUrlInput = document.getElementById('apiBaseUrl');
+        const openaiKeyInput = document.getElementById('openaiKey');
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            // Load saved API key if available
+            const savedKey = localStorage.getItem('openai_api_key');
+            if (savedKey) {
+                openaiKeyInput.value = savedKey;
+            }
+            
+            // Save API key when changed
+            openaiKeyInput.addEventListener('input', function() {
+                localStorage.setItem('openai_api_key', this.value);
+            });
+        });
+
+        // Form submission
+        form.addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const submitBtn = form.querySelector('.submit-btn');
+            const originalText = submitBtn.innerHTML;
+            
+            try {
+                // Show loading state
+                submitBtn.innerHTML = '<span class="loading"></span> Analyzing...';
+                submitBtn.disabled = true;
+                
+                // Collect form data
+                const formData = new FormData(form);
+                const surveyData = Object.fromEntries(formData.entries());
+                
+                // Add checkbox values
+                const checkboxes = form.querySelectorAll('input[type="checkbox"]');
+                checkboxes.forEach(checkbox => {
+                    surveyData[checkbox.name] = checkbox.checked;
+                });
+                
+                // Get API base URL
+                const apiBaseUrl = apiBaseUrlInput.value || API_BASE_URL;
+                
+                // Perform analysis using separate API endpoints
+                const results = await performAnalysis(surveyData, apiBaseUrl);
+                
+                // Display results
+                displayResults(results);
+                
+                // Show results section
+                resultsSection.style.display = 'block';
+                resultsSection.scrollIntoView({ behavior: 'smooth' });
+                
+            } catch (error) {
+                console.error('Error:', error);
+                showError('An error occurred while analyzing the survey. Please try again.');
+            } finally {
+                // Reset button state
+                submitBtn.innerHTML = originalText;
+                submitBtn.disabled = false;
+            }
+        });
+
+        // Perform analysis using separate API endpoints
+        async function performAnalysis(surveyData, apiBaseUrl) {
+            const results = {
+                gapAnalysis: {},
+                doorThicknessAnalysis: {},
+                aiAnalysis: null,
+                fallbackAnalysis: null,
+                contractorRecommendations: null,
+                costAnalysis: null
+            };
+            
+            try {
+                // 1. Analyze individual gaps using dedicated endpoints
+                const gapEndpoints = {
+                    'head': 'action_item/head',
+                    'hinge': 'action_item/hinge', 
+                    'closing': 'action_item/closing',
+                    'threshold': 'action_item/threshold'
+                };
+                
+                for (const [gapType, endpoint] of Object.entries(gapEndpoints)) {
+                    const gapValue = surveyData[`${gapType}Gap`];
+                    if (gapValue) {
+                        const response = await fetch(`${apiBaseUrl}/${endpoint}`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                value: parseFloat(gapValue),
+                                unit: 'mm'
+                            })
+                        });
+                        
+                        if (response.ok) {
+                            results.gapAnalysis[gapType] = await response.json();
+                        }
+                    }
+                }
+                
+                // Compliance check functionality removed as requested
+                
+                // 2. Analyze door thickness
+                if (surveyData.doorThickness) {
+                    const response = await fetch(`${apiBaseUrl}/action_item/doorthick`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            value: parseFloat(surveyData.doorThickness),
+                            unit: 'mm'
+                        })
+                    });
+                    
+                    if (response.ok) {
+                        results.doorThicknessAnalysis = await response.json();
+                    }
+                }
+                
+                // 4. Try AI analysis if API key is provided
+                const apiKey = openaiKeyInput.value.trim();
+                if (apiKey) {
+                    try {
+                        const response = await fetch(`${apiBaseUrl}/action_item/ai-analysis`, {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({
+                                survey_data: surveyData,
+                                api_key: apiKey,
+                                model: 'gpt-3.5-turbo'
+                            })
+                        });
+                        
+                        if (response.ok) {
+                            results.aiAnalysis = await response.json();
+                        }
+                    } catch (error) {
+                        console.warn('AI analysis failed:', error);
+                    }
+                }
+                
+                // 5. Fallback analysis
+                const fallbackResponse = await fetch(`${apiBaseUrl}/action_item/fallback-analysis`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        survey_data: surveyData
+                    })
+                });
+                
+                if (fallbackResponse.ok) {
+                    results.fallbackAnalysis = await fallbackResponse.json();
+                }
+                
+                // 6. Get contractor recommendations
+                const allActionItems = getAllActionItems(results);
+                if (allActionItems.length > 0) {
+                    const contractorResponse = await fetch(`${apiBaseUrl}/action_item/contractor-recommendations`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            action_items: allActionItems,
+                            api_key: apiKey
+                        })
+                    });
+                    
+                    if (contractorResponse.ok) {
+                        results.contractorRecommendations = await contractorResponse.json();
+                    }
+                }
+                
+                // 7. Calculate costs
+                if (allActionItems.length > 0) {
+                    const costResponse = await fetch(`${apiBaseUrl}/action_item/calculate-costs`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json'
+                        },
+                        body: JSON.stringify({
+                            action_items: allActionItems
+                        })
+                    });
+                    
+                    if (costResponse.ok) {
+                        results.costAnalysis = await costResponse.json();
+                    }
+                }
+                
+            } catch (error) {
+                console.error('Analysis error:', error);
+                throw error;
+            }
+            
+            return results;
+        }
+
+        // Get all action items from results
+        function getAllActionItems(results) {
+            const actionItems = [];
+            
+            // Add gap analysis action items
+            Object.values(results.gapAnalysis).forEach(analysis => {
+                if (analysis.actionItems) {
+                    actionItems.push(...analysis.actionItems);
+                }
+            });
+            
+            // Add door thickness analysis action items
+            if (results.doorThicknessAnalysis && results.doorThicknessAnalysis.actionItems) {
+                actionItems.push(...results.doorThicknessAnalysis.actionItems);
+            }
+            
+            // Add AI analysis action items
+            if (results.aiAnalysis && results.aiAnalysis.actionItems) {
+                actionItems.push(...results.aiAnalysis.actionItems);
+            }
+            
+            // Add fallback analysis action items
+            if (results.fallbackAnalysis && results.fallbackAnalysis.actionItems) {
+                actionItems.push(...results.fallbackAnalysis.actionItems);
+            }
+            
+            return actionItems;
+        }
+
+        // Display results
+        function displayResults(results) {
+            const allActionItems = getAllActionItems(results);
+            
+            let html = '';
+            
+            if (allActionItems.length === 0) {
+                html = '<div class="success"><i class="fas fa-check-circle"></i> No compliance issues found! All requirements appear to be met.</div>';
+            } else {
+                // Summary
+                const highPriority = allActionItems.filter(item => item.severity === 'high').length;
+                const mediumPriority = allActionItems.filter(item => item.severity === 'medium').length;
+                const lowPriority = allActionItems.filter(item => item.severity === 'low').length;
+                
+                html += `
+                    <div class="summary-section" style="background: #e8f4fd; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
+                        <h3><i class="fas fa-chart-bar"></i> Summary</h3>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-top: 15px;">
+                            <div style="text-align: center;">
+                                <div style="font-size: 2rem; color: #e74c3c; font-weight: bold;">${highPriority}</div>
+                                <div>High Priority</div>
+                            </div>
+                            <div style="text-align: center;">
+                                <div style="font-size: 2rem; color: #f39c12; font-weight: bold;">${mediumPriority}</div>
+                                <div>Medium Priority</div>
+                            </div>
+                            <div style="text-align: center;">
+                                <div style="font-size: 2rem; color: #27ae60; font-weight: bold;">${lowPriority}</div>
+                                <div>Low Priority</div>
+                            </div>
+                        </div>
+                `;
+                
+                // Cost analysis removed as requested
+                
+                html += '</div>';
+                
+                // Action items
+                allActionItems.forEach(item => {
+                    html += `
+                        <div class="action-item">
+                            <div class="action-item-header">
+                                <span class="severity ${item.severity}">${item.severity.toUpperCase()}</span>
+                                <span class="category">${item.category}</span>
+                                <span class="due-date">Due: ${item.dueDate}</span>
+                                <span class="confidence-score">Confidence: ${item.confidenceScore || 'N/A'}%</span>
+                            </div>
+                            <div style="margin: 15px 0; line-height: 1.6;">
+                                ${item.actionDescription}
+                            </div>
+                    `;
+                    
+                    if (item.remediationOptions && item.remediationOptions.length > 0) {
+                        html += `
+                            <div class="remediation-options">
+                                <h4>Remediation Options:</h4>
+                                ${item.remediationOptions.map(option => `
+                                    <div class="remediation-option">
+                                        <h5>${option.option}</h5>
+                                        <p class="option-plan">${option.plan}</p>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        `;
+                    }
+                    
+                    html += '</div>';
+                });
+                
+                // Contractor recommendations
+                if (results.contractorRecommendations && results.contractorRecommendations.contractors) {
+                    html += `
+                        <div style="margin-top: 30px; padding: 20px; background: #f8f9fa; border-radius: 10px;">
+                            <h3><i class="fas fa-tools"></i> Recommended Contractors</h3>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 15px; margin-top: 15px;">
+                                ${results.contractorRecommendations.contractors.map(contractor => `
+                                    <div style="background: white; padding: 15px; border-radius: 8px; border-left: 4px solid #3498db;">
+                                        <h5>${contractor.name}</h5>
+                                        <p style="color: #7f8c8d; margin: 5px 0;">${contractor.specialty}</p>
+                                        <p style="color: #2c3e50; margin: 5px 0;">${contractor.contact}</p>
+                                        <p style="margin: 5px 0;">
+                                            <a href="https://${contractor.website}" target="_blank" style="color: #3498db;">
+                                                <i class="fas fa-globe"></i> ${contractor.website}
+                                            </a>
+                                        </p>
+                                        <div style="color: #f39c12;">
+                                            ${'★'.repeat(contractor.rating)}${'☆'.repeat(5-contractor.rating)} ${contractor.rating}/5
+                                        </div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+            
+            resultsContent.innerHTML = html;
+        }
+
+        // Show error message
+        function showError(message) {
+            resultsContent.innerHTML = `<div class="error"><i class="fas fa-exclamation-triangle"></i> ${message}</div>`;
+            resultsSection.style.display = 'block';
+        }
+
+        // Real-time form validation
+        document.querySelectorAll('input, select').forEach(input => {
+            input.addEventListener('blur', function() {
+                validateField(this);
+            });
+            
+            input.addEventListener('input', function() {
+                clearFieldError(this);
+            });
+        });
+
+        // Toggle switch functionality removed as compliance check is no longer needed
+
+        function validateField(field) {
+            const value = field.value.trim();
+            const isRequired = field.hasAttribute('required');
+            
+            if (isRequired && !value) {
+                showFieldError(field, 'This field is required');
+                return false;
+            }
+            
+            if (field.type === 'number') {
+                const numValue = parseFloat(value);
+                const min = parseFloat(field.min);
+                const max = parseFloat(field.max);
+                
+                if (min && numValue < min) {
+                    showFieldError(field, `Value must be at least ${min}`);
+                    return false;
+                }
+                
+                if (max && numValue > max) {
+                    showFieldError(field, `Value must be no more than ${max}`);
+                    return false;
+                }
+            }
+            
+            return true;
+        }
+
+        function showFieldError(field, message) {
+            clearFieldError(field);
+            
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'field-error';
+            errorDiv.textContent = message;
+            
+            field.parentNode.appendChild(errorDiv);
+            field.style.borderColor = '#e74c3c';
+        }
+
+        function clearFieldError(field) {
+            const existingError = field.parentNode.querySelector('.field-error');
+            if (existingError) {
+                existingError.remove();
+            }
+            field.style.borderColor = '#e1e8ed';
+        }
+    </script>
+</body>
+</html>
