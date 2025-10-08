@@ -1,2 +1,2 @@
 [config]
-command = /usr/bin/python3 startup_with_deps.py
+command = python app.py
