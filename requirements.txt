@@ -1,4 +1,7 @@
 Flask==2.3.3
 Flask-CORS==4.0.0
 openai==0.28.1
+anthropic==0.34.2
 python-dotenv==1.0.0
+gunicorn==21.2.0
+waitress==2.1.2
