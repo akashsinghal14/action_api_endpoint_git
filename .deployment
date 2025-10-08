@@ -1,2 +1,2 @@
 [config]
-command = python app.py
+command = python3 app.py
