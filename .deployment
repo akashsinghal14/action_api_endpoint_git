@@ -1,2 +1,2 @@
 [config]
-command = /usr/bin/python3 check_imports.py
+command = python app.py
