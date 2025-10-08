@@ -1,3 +1,3 @@
 #!/bin/bash
 cd /home/site/wwwroot
-python app.py
+/usr/bin/python3 app.py

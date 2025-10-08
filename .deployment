@@ -1,2 +1,2 @@
 [config]
-command = python app.py
+command = bash startup_robust.sh
