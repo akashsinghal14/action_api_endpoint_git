@@ -126,6 +126,25 @@ def extract_cost_range(cost_string: str) -> Optional[Dict[str, int]]:
 
 # API Endpoints
 
+@app.route('/')
+def health_check():
+    """Simple health check endpoint"""
+    return jsonify({
+        'status': 'healthy',
+        'message': 'Fire Door Survey API is running',
+        'timestamp': datetime.now().isoformat(),
+        'version': '1.0.0'
+    })
+
+@app.route('/test')
+def test_endpoint():
+    """Simple test endpoint"""
+    return jsonify({
+        'message': 'Test endpoint working',
+        'python_version': os.sys.version,
+        'flask_available': True
+    })
+
 @app.route('/api/action_item/validate-field', methods=['POST'])
 def validate_field():
     """Validate individual form fields"""
