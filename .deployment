@@ -1,2 +1,2 @@
 [config]
-command = bash startup_robust.sh
+command = /usr/bin/python3 startup_simple.py
