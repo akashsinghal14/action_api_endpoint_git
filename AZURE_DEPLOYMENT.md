@@ -71,7 +71,7 @@ az login
 # Create resource group
 az group create --name fire-door-api-rg --location "UK South"
 
-# Create App Service plan
+# Create App Service plan (Linux)
 az appservice plan create --name fire-door-api-plan --resource-group fire-door-api-rg --sku B1 --is-linux
 
 # Create web app
@@ -88,6 +88,18 @@ az webapp config appsettings set --resource-group fire-door-api-rg --name your-a
 
 # Deploy from GitHub
 az webapp deployment source config --resource-group fire-door-api-rg --name your-app-name --repo-url https://github.com/akashsinghal14/action_api_endpoint_git.git --branch test --manual-integration
+```
+
+### Method 2b: Windows App Service (Alternative)
+
+If you prefer Windows App Service:
+
+```bash
+# Create App Service plan (Windows)
+az appservice plan create --name fire-door-api-plan --resource-group fire-door-api-rg --sku B1
+
+# Create web app (Windows)
+az webapp create --resource-group fire-door-api-rg --plan fire-door-api-plan --name your-app-name --runtime "PYTHON|3.11"
 ```
 
 ### Method 3: GitHub Actions (Most Professional)
