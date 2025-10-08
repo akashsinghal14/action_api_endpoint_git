@@ -1,2 +1,3 @@
 #!/bin/bash
-python startup.py
+cd /home/site/wwwroot
+python run.py
