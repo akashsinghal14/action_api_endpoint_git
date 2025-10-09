@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-import openai
+import anthropic
 import json
 import re
 from datetime import datetime, timedelta
@@ -14,16 +14,16 @@ load_dotenv()
 app = Flask(__name__)
 CORS(app)
 
-# API Key Mapping - Maps client keys to real OpenAI keys
+# API Key Mapping - Maps client keys to real Claude keys
 API_KEY_MAPPING = {
-    'your_key': os.getenv('OPENAI_API_KEY'),
+    'claude_key': os.getenv('CLAUDE_API_KEY'),
     'DEV_KEY': os.getenv('DEV_KEY'),
     'PROD_KEY': os.getenv('PROD_KEY'),
     'TEST_KEY': os.getenv('TEST_KEY')
 }
 
-DEFAULT_AI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-4o')
-
+DEFAULT_AI_MODEL = os.getenv('DEFAULT_AI_MODEL', 'claude-sonnet-4-20250514')
+print(f"Default AI model: {DEFAULT_AI_MODEL}")  # Debug line
 
 # Rate limiting - 100 calls per minute
 class RateLimiter:
@@ -55,9 +55,7 @@ class RateLimiter:
         oldest = min(self.calls)
         return max(0, self.time_window - (now - oldest))
 
-
 rate_limiter = RateLimiter()
-
 
 def get_due_date(severity: str) -> str:
     if severity == 'high':
@@ -72,16 +70,17 @@ def get_due_date(severity: str) -> str:
     return date.strftime('%d/%m/%Y')
 
 
-def calculate_openai_cost(model, input_tokens, output_tokens):
-    """Calculate cost based on OpenAI pricing (as of 2024)"""
+def calculate_claude_cost(model, input_tokens, output_tokens):
+    """Calculate cost based on Claude pricing (as of 2024)"""
     pricing = {
-        'gpt-4o': {'input': 0.005, 'output': 0.015},  # per 1K tokens
-        'gpt-4o-mini': {'input': 0.00015, 'output': 0.0006},
-        'gpt-4-turbo': {'input': 0.01, 'output': 0.03},
-        'gpt-3.5-turbo': {'input': 0.0015, 'output': 0.002},
+        'claude-sonnet-4-20250514': {'input': 0.003, 'output': 0.015},  # per 1K tokens
+        'claude-3-5-sonnet-20241022': {'input': 0.003, 'output': 0.015},
+        'claude-3-5-sonnet-20240620': {'input': 0.003, 'output': 0.015},
+        'claude-3-opus-20240229': {'input': 0.015, 'output': 0.075},
+        'claude-3-haiku-20240307': {'input': 0.00025, 'output': 0.00125},
     }
     
-    model_pricing = pricing.get(model, pricing['gpt-4o'])
+    model_pricing = pricing.get(model, pricing['claude-sonnet-4-20250514'])
     
     input_cost = (input_tokens / 1000) * model_pricing['input']
     output_cost = (output_tokens / 1000) * model_pricing['output']
@@ -90,24 +89,18 @@ def calculate_openai_cost(model, input_tokens, output_tokens):
 
 
 def resolve_api_key(client_key: Optional[str]) -> Optional[str]:
-    print(f"DEBUG: resolve_api_key called with: {client_key}")  # Debug line
     if not client_key:
-        print("DEBUG: No client key provided")  # Debug line
         return None
     if client_key in API_KEY_MAPPING:
         real = API_KEY_MAPPING[client_key]
-        print(f"DEBUG: Found in mapping: {client_key} -> {real}")  # Debug line
-        if real and real.startswith('sk-'):
-            print("DEBUG: Returning mapped key")  # Debug line
+        if real and real.startswith('sk-ant-'):
             return real
-    if client_key.startswith('sk-'):
-        print("DEBUG: Direct API key provided")  # Debug line
+    if client_key.startswith('sk-ant-'):
         return client_key
-    print("DEBUG: No valid key found")  # Debug line
     return None
 
 
-def parse_openai_response(ai_response):
+def parse_claude_response(ai_response):
     try:
         print(f"Parsing AI response: {ai_response}")  # Debug line
         json_match = re.search(r'\{[\s\S]*\}', ai_response)
@@ -132,7 +125,7 @@ def parse_openai_response(ai_response):
         raise ValueError('AI response parsing failed')
 
 
-def create_openai_prompt(survey_data):
+def create_claude_prompt(survey_data):
     # Build focused prompt based on what data is provided
     data_lines = []
     
@@ -206,177 +199,7 @@ If the measurement is exactly at minimum value, return empty actionItems array.
 If the measurement is NOT exactly at minimum value, provide specific action items for that measurement.
 """
 
-
-def analyze_gap_with_ai(gap_type, value, unit, api_key, model):
-    try:
-        # Create focused survey data for the specific measurement
-        survey_data = {}
-        if gap_type == 'door_thickness':
-            survey_data = {'doorThickness': value}
-        elif gap_type == 'frame_depth':
-            survey_data = {'frameDepth': value}
-        elif gap_type == 'door_size':
-            survey_data = {'doorSize': value}
-        elif gap_type in ['intumescent_strips', 'self_closing_device', 'keep_shut_sign', 'hold_open_device', 'certification_visible', 'contains_glazing', 'pyro_glazing']:
-            survey_data = {gap_type: value}
-        else:
-            survey_data = {f'{gap_type}Gap': value}
-        
-        prompt = create_openai_prompt(survey_data)
-        print(f"Survey data for {gap_type}: {survey_data}")  # Debug line
-        print(f"Prompt: {prompt}")  # Debug line
-        # Use new OpenAI API (v1.0+)
-        client = openai.OpenAI(api_key=api_key)
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {'role': 'system', 'content': f'You are a UK fire safety expert. Focus on the provided {gap_type} measurement and return ONLY JSON.'},
-                {'role': 'user', 'content': prompt},
-            ],
-            temperature=0.3,
-            max_tokens=1000,
-        )
-
-        ai_response = response.choices[0].message.content
-        print(f"AI Response for {gap_type}: {ai_response}")  # Debug line
-        action_items = parse_openai_response(ai_response)
-        print(f"Parsed action items for {gap_type}: {action_items}")  # Debug line
-
-        # Calculate cost
-        input_tokens = response.usage.prompt_tokens if response.usage else 0
-        output_tokens = response.usage.completion_tokens if response.usage else 0
-        total_tokens = response.usage.total_tokens if response.usage else 0
-        cost = calculate_openai_cost(model, input_tokens, output_tokens)
-        print(f"Cost for {gap_type}: ${cost} (Input: {input_tokens}, Output: {output_tokens})")  # Debug line
-
-        if gap_type == 'door_thickness':
-            min_thickness = 20
-            compliant = value == min_thickness  # Only exactly 20mm is compliant
-            max_gap = None
-        elif gap_type == 'frame_depth':
-            min_depth = 55
-            compliant = value == min_depth  # Only exactly 55mm is compliant
-            min_thickness = None
-            max_gap = None
-        elif gap_type == 'door_size':
-            min_size = 500
-            compliant = value == min_size  # Only exactly 500mm is compliant
-            min_thickness = None
-            max_gap = None
-        elif gap_type in ['intumescent_strips', 'self_closing_device', 'keep_shut_sign', 'hold_open_device', 'certification_visible', 'contains_glazing', 'pyro_glazing']:
-            # Boolean measurements: 'yes' is compliant, 'no' is not compliant
-            compliant = value.lower() == 'yes'
-            min_thickness = None
-            max_gap = None
-        else:
-            max_gap = 4
-            compliant = value <= max_gap
-            min_thickness = None
-
-        ai_severity = 'none'
-        if action_items:
-            severities = [item.get('severity', 'low') for item in action_items]
-            if 'high' in severities:
-                ai_severity = 'high'
-            elif 'medium' in severities:
-                ai_severity = 'medium'
-            elif 'low' in severities:
-                ai_severity = 'low'
-
-        if gap_type == 'door_thickness':
-            return {
-                'success': True,
-                'measurement_type': 'door_thickness',
-                'value': value,
-                'unit': unit,
-                'compliant': compliant,
-                'min_required': min_thickness,
-                'severity': ai_severity if not compliant else 'none',
-                'actionItems': action_items,
-                'timestamp': datetime.now().isoformat(),
-                'analysis_type': 'ai',
-                'ai_model': model,
-                'tokens_used': total_tokens,
-                'input_tokens': input_tokens,
-                'output_tokens': output_tokens,
-                'cost_usd': cost,
-            }
-        elif gap_type == 'frame_depth':
-            return {
-                'success': True,
-                'measurement_type': 'frame_depth',
-                'value': value,
-                'unit': unit,
-                'compliant': compliant,
-                'min_required': min_depth,
-                'severity': ai_severity if not compliant else 'none',
-                'actionItems': action_items,
-                'timestamp': datetime.now().isoformat(),
-                'analysis_type': 'ai',
-                'ai_model': model,
-                'tokens_used': total_tokens,
-                'input_tokens': input_tokens,
-                'output_tokens': output_tokens,
-                'cost_usd': cost,
-            }
-        elif gap_type == 'door_size':
-            return {
-                'success': True,
-                'measurement_type': 'door_size',
-                'value': value,
-                'unit': unit,
-                'compliant': compliant,
-                'min_required': min_size,
-                'severity': ai_severity if not compliant else 'none',
-                'actionItems': action_items,
-                'timestamp': datetime.now().isoformat(),
-                'analysis_type': 'ai',
-                'ai_model': model,
-                'tokens_used': total_tokens,
-                'input_tokens': input_tokens,
-                'output_tokens': output_tokens,
-                'cost_usd': cost,
-            }
-        elif gap_type in ['intumescent_strips', 'self_closing_device', 'keep_shut_sign', 'hold_open_device', 'certification_visible', 'contains_glazing', 'pyro_glazing']:
-            return {
-                'success': True,
-                'measurement_type': gap_type,
-                'value': value,
-                'compliant': compliant,
-                'severity': ai_severity if not compliant else 'none',
-                'actionItems': action_items,
-                'timestamp': datetime.now().isoformat(),
-                'analysis_type': 'ai',
-                'ai_model': model,
-                'tokens_used': total_tokens,
-                'input_tokens': input_tokens,
-                'output_tokens': output_tokens,
-                'cost_usd': cost,
-            }
-        else:
-            return {
-                'success': True,
-                'measurement_type': f'{gap_type}_gap',
-                'value': value,
-                'unit': unit,
-                'compliant': compliant,
-                'max_allowed': max_gap,
-                'severity': ai_severity if not compliant else 'none',
-                'actionItems': action_items,
-                'timestamp': datetime.now().isoformat(),
-                'analysis_type': 'ai',
-                'ai_model': model,
-                'tokens_used': total_tokens,
-                'input_tokens': input_tokens,
-                'output_tokens': output_tokens,
-                'cost_usd': cost,
-            }
-    except Exception as e:
-        print(f"Error in analyze_gap_with_ai: {e}")  # Debug line
-        import traceback
-        print(f"Traceback: {traceback.format_exc()}")  # Debug line
-        return None
-
+# API Endpoints
 
 @app.route('/api/action_item/head', methods=['POST'])
 @app.route('/api/action_item/head/<value>/<unit>', methods=['GET'])
@@ -405,10 +228,19 @@ def slim_head(value=None, unit=None):
             if not rate_limiter.can_make_call():
                 return jsonify({'error': 'Rate limit exceeded', 'remaining_calls': rate_limiter.get_remaining_calls(), 'reset_in_seconds': rate_limiter.get_reset_time()}), 429
             real_key = resolve_api_key(api_key)
+            print(f"API key provided: {api_key}")  # Debug line
+            print(f"Resolved key: {real_key}")  # Debug line
+            print(f"Is compliant: {is_compliant}")  # Debug line
             if real_key:
+                print("Calling AI analysis...")  # Debug line
                 ai = analyze_gap_with_ai('head', value, unit, real_key, model)
                 if ai:
+                    print("AI analysis successful, returning AI response")  # Debug line
                     return jsonify(ai)
+                else:
+                    print("AI analysis failed, falling back to static")  # Debug line
+            else:
+                print("No valid API key resolved")  # Debug line
 
         action_items = []
         if not is_compliant:
@@ -1204,26 +1036,174 @@ def slim_pyroglazing(value):
         return jsonify({'error': f'Pyro glazing analysis failed: {str(e)}'}), 500
 
 
-@app.route('/debug', methods=['GET'])
-def debug_endpoint():
-    """Debug endpoint to check API key resolution"""
-    api_key = request.args.get('api_key')
-    
-    debug_info = {
-        'provided_api_key': api_key,
-        'api_key_mapping': API_KEY_MAPPING,
-        'resolved_key': resolve_api_key(api_key),
-        'environment_vars': {
-            'OPENAI_API_KEY': os.getenv('OPENAI_API_KEY'),
-            'DEV_KEY': os.getenv('DEV_KEY'),
-            'PROD_KEY': os.getenv('PROD_KEY'),
-            'TEST_KEY': os.getenv('TEST_KEY'),
-            'OPENAI_MODEL': os.getenv('OPENAI_MODEL', 'gpt-4o')
-        }
-    }
-    
-    return jsonify(debug_info)
+def analyze_gap_with_ai(gap_type, value, unit, api_key, model):
+    try:
+        # Create focused survey data for the specific measurement
+        survey_data = {}
+        if gap_type == 'door_thickness':
+            survey_data = {'doorThickness': value}
+        elif gap_type == 'frame_depth':
+            survey_data = {'frameDepth': value}
+        elif gap_type == 'door_size':
+            survey_data = {'doorSize': value}
+        elif gap_type in ['intumescent_strips', 'self_closing_device', 'keep_shut_sign', 'hold_open_device', 'certification_visible', 'contains_glazing', 'pyro_glazing']:
+            survey_data = {gap_type: value}
+        else:
+            survey_data = {f'{gap_type}Gap': value}
+        
+        prompt = create_claude_prompt(survey_data)
+        print(f"Survey data for {gap_type}: {survey_data}")  # Debug line
+        print(f"Prompt: {prompt}")  # Debug line
+        client = anthropic.Anthropic(api_key=api_key)
+        response = client.messages.create(
+            model=model,
+            max_tokens=1000,
+            temperature=0.3,
+            messages=[
+                {'role': 'user', 'content': f'You are a UK fire safety expert. Focus on the provided {gap_type} measurement and return ONLY JSON.\n\n{prompt}'},
+            ]
+        )
+
+        ai_response = response.content[0].text
+        print(f"AI Response for {gap_type}: {ai_response}")  # Debug line
+        action_items = parse_claude_response(ai_response)
+        print(f"Parsed action items for {gap_type}: {action_items}")  # Debug line
+
+        # Calculate cost
+        input_tokens = response.usage.input_tokens if hasattr(response.usage, 'input_tokens') else 0
+        output_tokens = response.usage.output_tokens if hasattr(response.usage, 'output_tokens') else 0
+        total_tokens = input_tokens + output_tokens
+        cost = calculate_claude_cost(model, input_tokens, output_tokens)
+        print(f"Cost for {gap_type}: ${cost} (Input: {input_tokens}, Output: {output_tokens})")  # Debug line
+
+        if gap_type == 'door_thickness':
+            min_thickness = 20
+            compliant = value == min_thickness  # Only exactly 20mm is compliant
+            max_gap = None
+        elif gap_type == 'frame_depth':
+            min_depth = 55
+            compliant = value == min_depth  # Only exactly 55mm is compliant
+            min_thickness = None
+            max_gap = None
+        elif gap_type == 'door_size':
+            min_size = 500
+            compliant = value == min_size  # Only exactly 500mm is compliant
+            min_thickness = None
+            max_gap = None
+        elif gap_type in ['intumescent_strips', 'self_closing_device', 'keep_shut_sign', 'hold_open_device', 'certification_visible', 'contains_glazing', 'pyro_glazing']:
+            # Boolean measurements: 'yes' is compliant, 'no' is not compliant
+            compliant = value.lower() == 'yes'
+            min_thickness = None
+            max_gap = None
+        else:
+            max_gap = 4
+            compliant = value <= max_gap
+            min_thickness = None
+
+        ai_severity = 'none'
+        if action_items:
+            severities = [item.get('severity', 'low') for item in action_items]
+            if 'high' in severities:
+                ai_severity = 'high'
+            elif 'medium' in severities:
+                ai_severity = 'medium'
+            elif 'low' in severities:
+                ai_severity = 'low'
+
+        if gap_type == 'door_thickness':
+            return {
+                'success': True,
+                'measurement_type': 'door_thickness',
+                'value': value,
+                'unit': unit,
+                'compliant': compliant,
+                'min_required': min_thickness,
+                'severity': ai_severity if not compliant else 'none',
+                'actionItems': action_items,
+                'timestamp': datetime.now().isoformat(),
+                'analysis_type': 'ai',
+                'ai_model': model,
+                'tokens_used': total_tokens,
+                'input_tokens': input_tokens,
+                'output_tokens': output_tokens,
+                'cost_usd': cost,
+            }
+        elif gap_type == 'frame_depth':
+            return {
+                'success': True,
+                'measurement_type': 'frame_depth',
+                'value': value,
+                'unit': unit,
+                'compliant': compliant,
+                'min_required': min_depth,
+                'severity': ai_severity if not compliant else 'none',
+                'actionItems': action_items,
+                'timestamp': datetime.now().isoformat(),
+                'analysis_type': 'ai',
+                'ai_model': model,
+                'tokens_used': total_tokens,
+                'input_tokens': input_tokens,
+                'output_tokens': output_tokens,
+                'cost_usd': cost,
+            }
+        elif gap_type == 'door_size':
+            return {
+                'success': True,
+                'measurement_type': 'door_size',
+                'value': value,
+                'unit': unit,
+                'compliant': compliant,
+                'min_required': min_size,
+                'severity': ai_severity if not compliant else 'none',
+                'actionItems': action_items,
+                'timestamp': datetime.now().isoformat(),
+                'analysis_type': 'ai',
+                'ai_model': model,
+                'tokens_used': total_tokens,
+                'input_tokens': input_tokens,
+                'output_tokens': output_tokens,
+                'cost_usd': cost,
+            }
+        elif gap_type in ['intumescent_strips', 'self_closing_device', 'keep_shut_sign', 'hold_open_device', 'certification_visible', 'contains_glazing', 'pyro_glazing']:
+            return {
+                'success': True,
+                'measurement_type': gap_type,
+                'value': value,
+                'compliant': compliant,
+                'severity': ai_severity if not compliant else 'none',
+                'actionItems': action_items,
+                'timestamp': datetime.now().isoformat(),
+                'analysis_type': 'ai',
+                'ai_model': model,
+                'tokens_used': total_tokens,
+                'input_tokens': input_tokens,
+                'output_tokens': output_tokens,
+                'cost_usd': cost,
+            }
+        else:
+            return {
+                'success': True,
+                'measurement_type': f'{gap_type}_gap',
+                'value': value,
+                'unit': unit,
+                'compliant': compliant,
+                'max_allowed': max_gap,
+                'severity': ai_severity if not compliant else 'none',
+                'actionItems': action_items,
+                'timestamp': datetime.now().isoformat(),
+                'analysis_type': 'ai',
+                'ai_model': model,
+                'tokens_used': total_tokens,
+                'input_tokens': input_tokens,
+                'output_tokens': output_tokens,
+                'cost_usd': cost,
+            }
+    except Exception as e:
+        print(f"Error in analyze_gap_with_ai: {e}")  # Debug line
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")  # Debug line
+        return None
 
 
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5002)
+    app.run(debug=True, host='0.0.0.0', port=5001)
