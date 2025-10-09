@@ -1,20 +1,25 @@
+from flask import Flask, request, jsonify
+from flask_cors import CORS
+import openai
+import json
+import re
+from datetime import datetime, timedelta
+from typing import Optional
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
+
+app = Flask(__name__)
+CORS(app)
+
 # API Key Mapping - Maps client keys to real OpenAI keys
 API_KEY_MAPPING = {
-    'YOUR_KEY': os.getenv('OPENAI_API_KEY'),
-    'your_key': os.getenv('OPENAI_API_KEY'),  # Add lowercase version
+    'your_key': os.getenv('OPENAI_API_KEY'),
     'DEV_KEY': os.getenv('DEV_KEY'),
-    'dev_key': os.getenv('DEV_KEY'),  # Add lowercase version
     'PROD_KEY': os.getenv('PROD_KEY'),
-    'prod_key': os.getenv('PROD_KEY'),  # Add lowercase version
-    'TEST_KEY': os.getenv('TEST_KEY'),
-    'test_key': os.getenv('TEST_KEY'),  # Add lowercase version
-}on
-    'DEV_KEY': os.getenv('DEV_KEY'),
-    'dev_key': os.getenv('DEV_KEY'),  # Add lowercase version
-    'PROD_KEY': os.getenv('PROD_KEY'),
-    'prod_key': os.getenv('PROD_KEY'),  # Add lowercase version
-    'TEST_KEY': os.getenv('TEST_KEY'),
-    'test_key': os.getenv('TEST_KEY'),  # Add lowercase version
+    'TEST_KEY': os.getenv('TEST_KEY')
 }
 
 DEFAULT_AI_MODEL = os.getenv('OPENAI_MODEL', 'gpt-4o')
