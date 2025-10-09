@@ -225,7 +225,9 @@ def analyze_gap_with_ai(gap_type, value, unit, api_key, model):
         prompt = create_openai_prompt(survey_data)
         print(f"Survey data for {gap_type}: {survey_data}")  # Debug line
         print(f"Prompt: {prompt}")  # Debug line
-        response = openai.ChatCompletion.create(
+        # Use new OpenAI API (v1.0+)
+        client = openai.OpenAI(api_key=api_key)
+        response = client.chat.completions.create(
             model=model,
             messages=[
                 {'role': 'system', 'content': f'You are a UK fire safety expert. Focus on the provided {gap_type} measurement and return ONLY JSON.'},
@@ -233,7 +235,6 @@ def analyze_gap_with_ai(gap_type, value, unit, api_key, model):
             ],
             temperature=0.3,
             max_tokens=1000,
-            api_key=api_key,
         )
 
         ai_response = response.choices[0].message.content
@@ -242,9 +243,9 @@ def analyze_gap_with_ai(gap_type, value, unit, api_key, model):
         print(f"Parsed action items for {gap_type}: {action_items}")  # Debug line
 
         # Calculate cost
-        input_tokens = response.usage.prompt_tokens if hasattr(response.usage, 'prompt_tokens') else 0
-        output_tokens = response.usage.completion_tokens if hasattr(response.usage, 'completion_tokens') else 0
-        total_tokens = response.usage.total_tokens if hasattr(response.usage, 'total_tokens') else 0
+        input_tokens = response.usage.prompt_tokens if response.usage else 0
+        output_tokens = response.usage.completion_tokens if response.usage else 0
+        total_tokens = response.usage.total_tokens if response.usage else 0
         cost = calculate_openai_cost(model, input_tokens, output_tokens)
         print(f"Cost for {gap_type}: ${cost} (Input: {input_tokens}, Output: {output_tokens})")  # Debug line
 
