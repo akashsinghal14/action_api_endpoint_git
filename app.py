@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import openai
 import anthropic
@@ -1313,5 +1313,16 @@ def debug_endpoint():
     
     return jsonify(debug_info)
 
+@app.route('/')
+def serve_comparison_ui():
+    """Serve the comparison UI HTML file"""
+    return send_file('comparison_ui.html')
+
+@app.route('/comparison')
+def serve_comparison_ui_alt():
+    """Alternative route for comparison UI"""
+    return send_file('comparison_ui.html')
+
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5001)
+    port = int(os.environ.get('PORT', 5001))
+    app.run(debug=True, host='0.0.0.0', port=port)

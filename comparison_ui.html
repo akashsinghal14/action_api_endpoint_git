@@ -320,11 +320,11 @@
             <div class="form-row">
                 <div class="form-col">
                     <label for="openaiKey">OpenAI API Key:</label>
-                    <input type="password" id="" value="">
+                    <input type="password" id="openaiKey" value="">
                 </div>
                 <div class="form-col">
                     <label for="claudeKey">Claude API Key:</label>
-                    <input type="password" id="" value="">
+                    <input type="password" id="claudeKey" value="">
                 </div>
                 <div class="form-col">
                     <label for="model">Model (optional):</label>
@@ -374,12 +374,13 @@
         }
 
         async function callAPI(provider, apiType, value, unit, apiKey, model) {
-            const baseUrl = provider === 'openai' ? 'http://localhost:5002' : 'http://localhost:5001';
+            const baseUrl = window.location.origin;  // Use current domain
             const url = `${baseUrl}/api/action_item/${apiType}/${value}${unit ? '/' + unit : ''}`;
             
             const params = new URLSearchParams();
             if (apiKey) params.append('api_key', apiKey);
             if (model) params.append('model', model);
+            params.append('ai_provider', provider);  // Add provider parameter
 
             const fullUrl = `${url}?${params.toString()}`;
             
