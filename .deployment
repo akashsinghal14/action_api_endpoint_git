@@ -1,2 +1,3 @@
 [config]
 command = python3 startup.py
+python = 3.13

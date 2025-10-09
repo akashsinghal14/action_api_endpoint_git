@@ -1,1 +1,1 @@
-web: /usr/bin/python3 app.py
+web: python3 startup.py
