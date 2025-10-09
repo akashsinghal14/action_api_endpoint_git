@@ -90,14 +90,20 @@ def calculate_openai_cost(model, input_tokens, output_tokens):
 
 
 def resolve_api_key(client_key: Optional[str]) -> Optional[str]:
+    print(f"DEBUG: resolve_api_key called with: {client_key}")  # Debug line
     if not client_key:
+        print("DEBUG: No client key provided")  # Debug line
         return None
     if client_key in API_KEY_MAPPING:
         real = API_KEY_MAPPING[client_key]
+        print(f"DEBUG: Found in mapping: {client_key} -> {real}")  # Debug line
         if real and real.startswith('sk-'):
+            print("DEBUG: Returning mapped key")  # Debug line
             return real
     if client_key.startswith('sk-'):
+        print("DEBUG: Direct API key provided")  # Debug line
         return client_key
+    print("DEBUG: No valid key found")  # Debug line
     return None
 
 
@@ -1195,6 +1201,27 @@ def slim_pyroglazing(value):
         })
     except Exception as e:
         return jsonify({'error': f'Pyro glazing analysis failed: {str(e)}'}), 500
+
+
+@app.route('/debug', methods=['GET'])
+def debug_endpoint():
+    """Debug endpoint to check API key resolution"""
+    api_key = request.args.get('api_key')
+    
+    debug_info = {
+        'provided_api_key': api_key,
+        'api_key_mapping': API_KEY_MAPPING,
+        'resolved_key': resolve_api_key(api_key),
+        'environment_vars': {
+            'OPENAI_API_KEY': os.getenv('OPENAI_API_KEY'),
+            'DEV_KEY': os.getenv('DEV_KEY'),
+            'PROD_KEY': os.getenv('PROD_KEY'),
+            'TEST_KEY': os.getenv('TEST_KEY'),
+            'OPENAI_MODEL': os.getenv('OPENAI_MODEL', 'gpt-4o')
+        }
+    }
+    
+    return jsonify(debug_info)
 
 
 if __name__ == '__main__':
