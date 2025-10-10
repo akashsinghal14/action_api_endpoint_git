@@ -1289,6 +1289,16 @@ def slim_pyroglazing(value):
     except Exception as e:
         return jsonify({'error': f'Pyro glazing analysis failed: {str(e)}'}), 500
 
+@app.route('/api/keys', methods=['GET'])
+def get_api_keys():
+    """Get API keys from environment variables for the UI"""
+    return jsonify({
+        'openai_key': os.getenv('OPENAI_API_KEY', ''),
+        'claude_key': os.getenv('CLAUDE_API_KEY', ''),
+        'openai_model': os.getenv('OPENAI_MODEL', 'gpt-4o'),
+        'claude_model': os.getenv('DEFAULT_AI_MODEL', 'claude-sonnet-4-20250514')
+    })
+
 @app.route('/debug', methods=['GET'])
 def debug_endpoint():
     """Debug endpoint to check API key resolution and provider info"""

@@ -319,11 +319,11 @@
             </div>
             <div class="form-row">
                 <div class="form-col">
-                    <label for="openaiKey">OpenAI API Key:</label>
+                    <label for="openaiKey">OpenAI API Key: <span id="openaiStatus"></span></label>
                     <input type="password" id="openaiKey" value="">
                 </div>
                 <div class="form-col">
-                    <label for="claudeKey">Claude API Key:</label>
+                    <label for="claudeKey">Claude API Key: <span id="claudeStatus"></span></label>
                     <input type="password" id="claudeKey" value="">
                 </div>
                 <div class="form-col">
@@ -342,6 +342,44 @@
     </div>
 
     <script>
+        // Load API keys from environment variables when page loads
+        async function loadAPIKeys() {
+            try {
+                const response = await fetch('/api/keys');
+                const keys = await response.json();
+                
+                // Auto-fill the API key fields
+                const openaiKey = keys.openai_key || '';
+                const claudeKey = keys.claude_key || '';
+                
+                document.getElementById('openaiKey').value = openaiKey;
+                document.getElementById('claudeKey').value = claudeKey;
+                
+                // Show status indicators
+                document.getElementById('openaiStatus').innerHTML = openaiKey ? 
+                    '<span style="color: green;">✅ Loaded from environment</span>' : 
+                    '<span style="color: orange;">⚠️ Enter manually</span>';
+                    
+                document.getElementById('claudeStatus').innerHTML = claudeKey ? 
+                    '<span style="color: green;">✅ Loaded from environment</span>' : 
+                    '<span style="color: orange;">⚠️ Enter manually</span>';
+                
+                // Set default models if not already set
+                const modelInput = document.getElementById('model');
+                if (!modelInput.value) {
+                    modelInput.placeholder = `${keys.openai_model}, ${keys.claude_model}`;
+                }
+            } catch (error) {
+                console.log('Could not load API keys from environment:', error);
+                // Show error status
+                document.getElementById('openaiStatus').innerHTML = '<span style="color: red;">❌ Error loading</span>';
+                document.getElementById('claudeStatus').innerHTML = '<span style="color: red;">❌ Error loading</span>';
+            }
+        }
+
+        // Load keys when page loads
+        document.addEventListener('DOMContentLoaded', loadAPIKeys);
+
         async function compareAPIs() {
             const apiType = document.getElementById('apiType').value;
             const value = document.getElementById('value').value;
