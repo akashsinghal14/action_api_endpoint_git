@@ -1333,6 +1333,210 @@ def serve_comparison_ui_alt():
     """Alternative route for comparison UI"""
     return send_file('comparison_ui.html')
 
+@app.route('/api/action_item/analyze', methods=['POST'])
+def analyze_measurement():
+    """Unified endpoint for all fire door measurements with OpenAI and Claude support"""
+    try:
+        data = request.get_json() or {}
+        measurement_type = data.get('measurement_type')
+        value = data.get('value')
+        unit = data.get('unit', 'mm')
+        api_key = data.get('api_key')
+        model = data.get('model')
+        ai_provider = data.get('ai_provider', 'openai')
+        
+        # Validation
+        if not data:
+            return jsonify({'error': 'JSON data required'}), 400
+        if not measurement_type:
+            return jsonify({'error': 'measurement_type is required'}), 400
+        if value is None:
+            return jsonify({'error': 'value is required'}), 400
+        
+        # Define valid measurement types
+        numeric_types = ['head', 'hinge', 'closing', 'threshold', 'doorthick', 'framedepth', 'doorsize']
+        boolean_types = ['intustrips', 'selfclosing', 'shutsign', 'holddevice', 'certivisible', 'glazing', 'pyroglazing']
+        all_types = numeric_types + boolean_types
+        
+        if measurement_type not in all_types:
+            return jsonify({
+                'error': f'Invalid measurement_type. Must be one of: {", ".join(all_types)}'
+            }), 400
+        
+        # Validate AI provider
+        if ai_provider not in ['openai', 'claude']:
+            return jsonify({'error': 'ai_provider must be "openai" or "claude"'}), 400
+        
+        # Set default model if not provided
+        if not model:
+            model = DEFAULT_OPENAI_MODEL if ai_provider == 'openai' else DEFAULT_CLAUDE_MODEL
+        
+        # Handle numeric measurements
+        if measurement_type in numeric_types:
+            try:
+                value = float(value)
+            except (ValueError, TypeError):
+                return jsonify({'error': 'Value must be a valid number for numeric measurements'}), 400
+            
+            # Call the appropriate function based on measurement type
+            if measurement_type == 'head':
+                return handle_numeric_measurement_unified('head', value, unit, api_key, model, ai_provider, 4, 'max_allowed')
+            elif measurement_type == 'hinge':
+                return handle_numeric_measurement_unified('hinge', value, unit, api_key, model, ai_provider, 4, 'max_allowed')
+            elif measurement_type == 'closing':
+                return handle_numeric_measurement_unified('closing', value, unit, api_key, model, ai_provider, 4, 'max_allowed')
+            elif measurement_type == 'threshold':
+                return handle_numeric_measurement_unified('threshold', value, unit, api_key, model, ai_provider, 4, 'max_allowed')
+            elif measurement_type == 'doorthick':
+                return handle_numeric_measurement_unified('door_thickness', value, unit, api_key, model, ai_provider, 20, 'min_required')
+            elif measurement_type == 'framedepth':
+                return handle_numeric_measurement_unified('frame_depth', value, unit, api_key, model, ai_provider, 55, 'min_required')
+            elif measurement_type == 'doorsize':
+                return handle_numeric_measurement_unified('door_size', value, unit, api_key, model, ai_provider, 500, 'min_required')
+        
+        # Handle boolean measurements
+        elif measurement_type in boolean_types:
+            if value.lower() not in ['yes', 'no']:
+                return jsonify({'error': 'Value must be "yes" or "no" for boolean measurements'}), 400
+            
+            # Call the appropriate function based on measurement type
+            if measurement_type == 'intustrips':
+                return handle_boolean_measurement_unified('intumescent_strips', value, api_key, model, ai_provider, 'high')
+            elif measurement_type == 'selfclosing':
+                return handle_boolean_measurement_unified('self_closing_device', value, api_key, model, ai_provider, 'high')
+            elif measurement_type == 'shutsign':
+                return handle_boolean_measurement_unified('keep_shut_sign', value, api_key, model, ai_provider, 'medium')
+            elif measurement_type == 'holddevice':
+                return handle_boolean_measurement_unified('hold_open_device', value, api_key, model, ai_provider, 'medium')
+            elif measurement_type == 'certivisible':
+                return handle_boolean_measurement_unified('certification_visible', value, api_key, model, ai_provider, 'high')
+            elif measurement_type == 'glazing':
+                return handle_boolean_measurement_unified('contains_glazing', value, api_key, model, ai_provider, 'medium')
+            elif measurement_type == 'pyroglazing':
+                return handle_boolean_measurement_unified('pyro_glazing', value, api_key, model, ai_provider, 'high')
+        
+    except Exception as e:
+        return jsonify({'error': f'Analysis failed: {str(e)}'}), 500
+
+
+def handle_numeric_measurement_unified(gap_type, value, unit, api_key, model, ai_provider, threshold, threshold_type):
+    """Handle numeric measurements (gaps, thickness, etc.) with AI provider support"""
+    try:
+        if threshold_type == 'max_allowed':
+            is_compliant = value <= threshold
+        else:  # min_required
+            if value < threshold:
+                return jsonify({'error': f'{gap_type} should be at least {threshold}mm'}), 400
+            is_compliant = value == threshold  # Only exactly the threshold is compliant
+        
+        if api_key and not is_compliant:
+            if not rate_limiter.can_make_call():
+                return jsonify({'error': 'Rate limit exceeded', 'remaining_calls': rate_limiter.get_remaining_calls(), 'reset_in_seconds': rate_limiter.get_reset_time()}), 429
+            
+            real_key = resolve_api_key(api_key, ai_provider)
+            if real_key:
+                ai = analyze_gap_with_ai(gap_type, value, unit, real_key, model, ai_provider)
+                if ai:
+                    return jsonify(ai)
+        
+        # Generate static action items
+        action_items = []
+        if not is_compliant:
+            severity = 'high' if threshold_type == 'max_allowed' else 'medium'
+            category = gap_type.replace('_', ' ').title() + ' Compliance'
+            
+            if threshold_type == 'max_allowed':
+                description = f'{gap_type.replace("_", " ").title()} ({value}mm) exceeds maximum allowed ({threshold}mm).'
+            else:
+                description = f'{gap_type.replace("_", " ").title()} ({value}mm) is below recommended minimum ({threshold}mm).'
+            
+            action_items.append({
+                'severity': severity,
+                'category': category,
+                'dueDate': get_due_date(severity),
+                'actionDescription': description,
+                'remediationOptions': [
+                    {'option': 'Option 1: Quick Fix', 'plan': f'Basic solution for {gap_type.replace("_", " ")}.'},
+                    {'option': 'Option 2: Standard Solution', 'plan': f'Quality solution for {gap_type.replace("_", " ")}.'},
+                    {'option': 'Option 3: Comprehensive Fix', 'plan': f'Premium solution with professional testing.'},
+                ],
+                'confidenceScore': 92 if threshold_type == 'max_allowed' else 85,
+            })
+        
+        result = {
+            'success': True,
+            'measurement_type': f'{gap_type}_gap' if threshold_type == 'max_allowed' else gap_type,
+            'value': value,
+            'unit': unit,
+            'compliant': is_compliant,
+            'severity': severity if not is_compliant else 'none',
+            'actionItems': action_items,
+            'timestamp': datetime.now().isoformat(),
+            'analysis_type': 'ai' if (api_key and not is_compliant) else 'static',
+            'ai_provider': ai_provider if (api_key and not is_compliant) else None,
+        }
+        
+        if threshold_type == 'max_allowed':
+            result['max_allowed'] = threshold
+        else:
+            result['min_required'] = threshold
+            
+        return jsonify(result)
+        
+    except Exception as e:
+        return jsonify({'error': f'{gap_type} analysis failed: {str(e)}'}), 500
+
+
+def handle_boolean_measurement_unified(measurement_type, value, api_key, model, ai_provider, default_severity):
+    """Handle boolean measurements (yes/no values) with AI provider support"""
+    try:
+        is_compliant = value.lower() == 'yes'
+        
+        action_items = []
+        
+        if api_key and not is_compliant:
+            if not rate_limiter.can_make_call():
+                return jsonify({'error': 'Rate limit exceeded', 'remaining_calls': rate_limiter.get_remaining_calls(), 'reset_in_seconds': rate_limiter.get_reset_time()}), 429
+            
+            real_key = resolve_api_key(api_key, ai_provider)
+            if real_key:
+                ai = analyze_gap_with_ai(measurement_type, value, 'boolean', real_key, model, ai_provider)
+                if ai:
+                    return jsonify(ai)
+                action_items = []
+        else:
+            if not is_compliant:
+                category = measurement_type.replace('_', ' ').title() + ' Compliance'
+                description = f'{measurement_type.replace("_", " ").title()} is missing. This is critical for fire door compliance.'
+                
+                action_items.append({
+                    'severity': default_severity,
+                    'category': category,
+                    'dueDate': get_due_date(default_severity),
+                    'actionDescription': description,
+                    'remediationOptions': [
+                        {'option': 'Option 1: Quick Fix', 'plan': f'Install basic {measurement_type.replace("_", " ")} immediately.'},
+                        {'option': 'Option 2: Standard Solution', 'plan': f'Install quality {measurement_type.replace("_", " ")} with proper setup.'},
+                        {'option': 'Option 3: Comprehensive Fix', 'plan': f'Complete {measurement_type.replace("_", " ")} installation with testing.'},
+                    ],
+                    'confidenceScore': 95 if default_severity == 'high' else 85,
+                })
+        
+        return jsonify({
+            'success': True,
+            'measurement_type': measurement_type,
+            'value': value,
+            'compliant': is_compliant,
+            'severity': default_severity if not is_compliant else 'none',
+            'actionItems': action_items,
+            'timestamp': datetime.now().isoformat(),
+            'analysis_type': 'ai' if (api_key and not is_compliant) else 'static',
+            'ai_provider': ai_provider if (api_key and not is_compliant) else None,
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'{measurement_type} analysis failed: {str(e)}'}), 500
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))
     app.run(debug=True, host='0.0.0.0', port=port)
