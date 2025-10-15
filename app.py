@@ -18,7 +18,7 @@ CORS(app)
 # Unified API Key Mapping - Maps client keys to real AI keys
 API_KEY_MAPPING = {
     # OpenAI keys
-    'your_key': os.getenv('OPENAI_API_KEY'),
+    'openai_key': os.getenv('OPENAI_API_KEY'),
     'openai_dev': os.getenv('OPENAI_DEV_KEY'),
     'openai_prod': os.getenv('OPENAI_PROD_KEY'),
     'openai_test': os.getenv('OPENAI_TEST_KEY'),
@@ -121,7 +121,7 @@ def calculate_claude_cost(model, input_tokens, output_tokens):
 
 def resolve_api_key(client_key: Optional[str], provider: str) -> Optional[str]:
     """Resolve API key based on provider"""
-    print(f"DEBUG: resolve_api_key called with: {client_key}, provider: {provider}")
+    print(f"DEBUG: resolve_api_key called with: client_key, provider: {provider}")
     
     if not client_key:
         print("DEBUG: No client key provided")
@@ -130,7 +130,7 @@ def resolve_api_key(client_key: Optional[str], provider: str) -> Optional[str]:
     # Check if key is in mapping
     if client_key in API_KEY_MAPPING:
         real = API_KEY_MAPPING[client_key]
-        print(f"DEBUG: Found in mapping: {client_key} -> {real}")
+        print(f"DEBUG: Found in mapping: client_key -> real")
         
         if provider == 'openai' and real and real.startswith('sk-'):
             print("DEBUG: Returning OpenAI mapped key")
