@@ -208,6 +208,10 @@ def create_ai_prompt(survey_data):
         data_lines.append(f"- Contains Glazing: {survey_data['contains_glazing']}")
     if 'pyro_glazing' in survey_data:
         data_lines.append(f"- Pyro Glazing: {survey_data['pyro_glazing']}")
+    if 'door_close_fully' in survey_data:
+        data_lines.append(f"- Door Close Fully: {survey_data['door_close_fully']}")
+    if 'hinges_fire_rated' in survey_data:
+        data_lines.append(f"- Hinges Fire Rated: {survey_data['hinges_fire_rated']}")
     
     survey_text = "\n".join(data_lines) if data_lines else "No specific measurements provided"
     
@@ -261,7 +265,7 @@ def analyze_gap_with_ai(gap_type, value, unit, api_key, model, provider):
             survey_data = {'frameDepth': value}
         elif gap_type == 'door_size':
             survey_data = {'doorSize': value}
-        elif gap_type in ['intumescent_strips', 'self_closing_device', 'keep_shut_sign', 'hold_open_device', 'certification_visible', 'contains_glazing', 'pyro_glazing']:
+        elif gap_type in ['intumescent_strips', 'self_closing_device', 'keep_shut_sign', 'hold_open_device', 'certification_visible', 'contains_glazing', 'pyro_glazing', 'door_close_fully', 'hinges_fire_rated']:
             survey_data = {gap_type: value}
         else:
             survey_data = {f'{gap_type}Gap': value}
@@ -330,7 +334,7 @@ def analyze_gap_with_ai(gap_type, value, unit, api_key, model, provider):
             compliant = value == min_size  # Only exactly 500mm is compliant
             min_thickness = None
             max_gap = None
-        elif gap_type in ['intumescent_strips', 'self_closing_device', 'keep_shut_sign', 'hold_open_device', 'certification_visible', 'contains_glazing', 'pyro_glazing']:
+        elif gap_type in ['intumescent_strips', 'self_closing_device', 'keep_shut_sign', 'hold_open_device', 'certification_visible', 'contains_glazing', 'pyro_glazing', 'door_close_fully', 'hinges_fire_rated']:
             # Boolean measurements: 'yes' is compliant, 'no' is not compliant
             compliant = value.lower() == 'yes'
             min_thickness = None
@@ -353,9 +357,9 @@ def analyze_gap_with_ai(gap_type, value, unit, api_key, model, provider):
         # Build response based on gap type
         response_data = {
             'success': True,
-            'measurement_type': gap_type if gap_type in ['intumescent_strips', 'self_closing_device', 'keep_shut_sign', 'hold_open_device', 'certification_visible', 'contains_glazing', 'pyro_glazing'] else f'{gap_type}_gap',
+            'measurement_type': gap_type if gap_type in ['intumescent_strips', 'self_closing_device', 'keep_shut_sign', 'hold_open_device', 'certification_visible', 'contains_glazing', 'pyro_glazing', 'door_close_fully', 'hinges_fire_rated'] else f'{gap_type}_gap',
             'value': value,
-            'unit': unit if gap_type not in ['intumescent_strips', 'self_closing_device', 'keep_shut_sign', 'hold_open_device', 'certification_visible', 'contains_glazing', 'pyro_glazing'] else None,
+            'unit': unit if gap_type not in ['intumescent_strips', 'self_closing_device', 'keep_shut_sign', 'hold_open_device', 'certification_visible', 'contains_glazing', 'pyro_glazing', 'door_close_fully', 'hinges_fire_rated'] else None,
             'compliant': compliant,
             'severity': ai_severity if not compliant else 'none',
             'actionItems': action_items,
@@ -1289,6 +1293,118 @@ def slim_pyroglazing(value):
     except Exception as e:
         return jsonify({'error': f'Pyro glazing analysis failed: {str(e)}'}), 500
 
+@app.route('/api/action_item/doorclosefully/<value>', methods=['GET'])
+def slim_doorclosefully(value):
+    try:
+        api_key = request.args.get('api_key')
+        model = request.args.get('model')
+        ai_provider = request.args.get('ai_provider', 'openai')
+        
+        if value.lower() not in ['yes', 'no']:
+            return jsonify({'error': 'Value must be "yes" or "no"'}), 400
+
+        is_compliant = value.lower() == 'yes'
+
+        action_items = []
+        
+        if api_key and not is_compliant:
+            if not rate_limiter.can_make_call():
+                return jsonify({'error': 'Rate limit exceeded', 'remaining_calls': rate_limiter.get_remaining_calls(), 'reset_in_seconds': rate_limiter.get_reset_time()}), 429
+            
+            if not model:
+                model = DEFAULT_OPENAI_MODEL if ai_provider == 'openai' else DEFAULT_CLAUDE_MODEL
+            
+            real_key = resolve_api_key(api_key, ai_provider)
+            if real_key:
+                ai = analyze_gap_with_ai('door_close_fully', value, 'boolean', real_key, model, ai_provider)
+                if ai:
+                    return jsonify(ai)
+                action_items = []
+        else:
+            if not is_compliant:
+                action_items.append({
+                    'severity': 'high',
+                    'category': 'Door Close Fully Compliance',
+                    'dueDate': get_due_date('high'),
+                    'actionDescription': 'Door does not close fully. This is critical for fire door safety and compliance.',
+                    'remediationOptions': [
+                        {'option': 'Option 1: Quick Fix - Basic Adjustment', 'plan': 'Adjust door hinges and alignment for proper closure.'},
+                        {'option': 'Option 2: Standard Solution', 'plan': 'Check and repair door frame, hinges, and closing mechanism.'},
+                        {'option': 'Option 3: Comprehensive Fix', 'plan': 'Complete door assessment, repair, and professional testing for full compliance.'},
+                    ],
+                    'confidenceScore': 95,
+                })
+
+        return jsonify({
+            'success': True,
+            'measurement_type': 'door_close_fully',
+            'value': value,
+            'compliant': is_compliant,
+            'severity': 'high' if not is_compliant else 'none',
+            'actionItems': action_items,
+            'timestamp': datetime.now().isoformat(),
+            'analysis_type': 'ai' if (api_key and not is_compliant) else 'static',
+            'ai_provider': ai_provider if (api_key and not is_compliant) else None,
+        })
+    except Exception as e:
+        return jsonify({'error': f'Door close fully analysis failed: {str(e)}'}), 500
+
+@app.route('/api/action_item/hingesfirerated/<value>', methods=['GET'])
+def slim_hingesfirerated(value):
+    try:
+        api_key = request.args.get('api_key')
+        model = request.args.get('model')
+        ai_provider = request.args.get('ai_provider', 'openai')
+        
+        if value.lower() not in ['yes', 'no']:
+            return jsonify({'error': 'Value must be "yes" or "no"'}), 400
+
+        is_compliant = value.lower() == 'yes'
+
+        action_items = []
+        
+        if api_key and not is_compliant:
+            if not rate_limiter.can_make_call():
+                return jsonify({'error': 'Rate limit exceeded', 'remaining_calls': rate_limiter.get_remaining_calls(), 'reset_in_seconds': rate_limiter.get_reset_time()}), 429
+            
+            if not model:
+                model = DEFAULT_OPENAI_MODEL if ai_provider == 'openai' else DEFAULT_CLAUDE_MODEL
+            
+            real_key = resolve_api_key(api_key, ai_provider)
+            if real_key:
+                ai = analyze_gap_with_ai('hinges_fire_rated', value, 'boolean', real_key, model, ai_provider)
+                if ai:
+                    return jsonify(ai)
+                action_items = []
+        else:
+            if not is_compliant:
+                action_items.append({
+                    'severity': 'high',
+                    'category': 'Hinges Fire Rated Compliance',
+                    'dueDate': get_due_date('high'),
+                    'actionDescription': 'Hinges are not fire rated. This is critical for fire door safety and compliance.',
+                    'remediationOptions': [
+                        {'option': 'Option 1: Quick Fix - Basic Replacement', 'plan': 'Replace with standard fire rated hinges meeting BS EN 1935 standards.'},
+                        {'option': 'Option 2: Standard Solution', 'plan': 'Install certified fire rated hinges with proper documentation and testing.'},
+                        {'option': 'Option 3: Comprehensive Fix', 'plan': 'Complete hinge assessment, replacement with certified fire rated hinges, and professional testing for full compliance.'},
+                    ],
+                    'confidenceScore': 95,
+                })
+
+        return jsonify({
+            'success': True,
+            'measurement_type': 'hinges_fire_rated',
+            'value': value,
+            'compliant': is_compliant,
+            'severity': 'high' if not is_compliant else 'none',
+            'actionItems': action_items,
+            'timestamp': datetime.now().isoformat(),
+            'analysis_type': 'ai' if (api_key and not is_compliant) else 'static',
+            'ai_provider': ai_provider if (api_key and not is_compliant) else None,
+        })
+    except Exception as e:
+        return jsonify({'error': f'Hinges fire rated analysis failed: {str(e)}'}), 500
+
 @app.route('/api/keys', methods=['GET'])
 def get_api_keys():
     """Get API keys from environment variables for the UI"""
@@ -1355,7 +1471,7 @@ def analyze_measurement():
         
         # Define valid measurement types
         numeric_types = ['head', 'hinge', 'closing', 'threshold', 'doorthick', 'framedepth', 'doorsize']
-        boolean_types = ['intustrips', 'selfclosing', 'shutsign', 'holddevice', 'certivisible', 'glazing', 'pyroglazing']
+        boolean_types = ['intustrips', 'selfclosing', 'shutsign', 'holddevice', 'certivisible', 'glazing', 'pyroglazing', 'doorclosefully', 'hingesfirerated']
         all_types = numeric_types + boolean_types
         
         if measurement_type not in all_types:
@@ -1414,6 +1530,10 @@ def analyze_measurement():
                 return handle_boolean_measurement_unified('contains_glazing', value, api_key, model, ai_provider, 'medium')
             elif measurement_type == 'pyroglazing':
                 return handle_boolean_measurement_unified('pyro_glazing', value, api_key, model, ai_provider, 'high')
+            elif measurement_type == 'doorclosefully':
+                return handle_boolean_measurement_unified('door_close_fully', value, api_key, model, ai_provider, 'high')
+            elif measurement_type == 'hingesfirerated':
+                return handle_boolean_measurement_unified('hinges_fire_rated', value, api_key, model, ai_provider, 'high')
         
     except Exception as e:
         return jsonify({'error': f'Analysis failed: {str(e)}'}), 500
