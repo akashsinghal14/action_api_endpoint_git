@@ -445,6 +445,8 @@
                                 <option value="certivisible">Certification Visible</option>
                                 <option value="glazing">Contains Glazing</option>
                                 <option value="pyroglazing">Pyro Glazing</option>
+                                <option value="doorclosefully">Door Close Fully</option>
+                                <option value="hingesfirerated">Hinges Fire Rated</option>
                             </select>
                             <span class="input-icon">📐</span>
                         </div>
@@ -606,18 +608,28 @@
         }
 
         async function callAPI(provider, apiType, value, unit, apiKey, model) {
-            const baseUrl = window.location.origin;  // Use current domain
-            const url = `${baseUrl}/api/action_item/${apiType}/${value}${unit ? '/' + unit : ''}`;
+            const baseUrl = window.location.origin;
+            const url = `${baseUrl}/api/action_item/analyze`; // Unified endpoint
             
-            const params = new URLSearchParams();
-            if (apiKey) params.append('api_key', apiKey);
-            if (model) params.append('model', model);
-            params.append('ai_provider', provider);  // Add provider parameter
+            // For POST, body is used, not URL params for data
+            const bodyData = {
+                measurement_type: apiType,
+                value: value,
+                api_key: apiKey,
+                model: model,
+                ai_provider: provider
+            };
+            if (unit) bodyData.unit = unit;
 
-            const fullUrl = `${url}?${params.toString()}`;
-            
             try {
-                const response = await fetch(fullUrl);
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(bodyData)
+                });
+                
                 const data = await response.json();
                 
                 if (!response.ok) {
@@ -761,7 +773,7 @@
             const unitInput = document.getElementById('unit');
             const valueInput = document.getElementById('value');
             
-            if (['intustrips', 'selfclosing', 'shutsign', 'holddevice', 'certivisible', 'glazing', 'pyroglazing'].includes(this.value)) {
+            if (['intustrips', 'selfclosing', 'shutsign', 'holddevice', 'certivisible', 'glazing', 'pyroglazing', 'doorclosefully', 'hingesfirerated'].includes(this.value)) {
                 unitInput.value = '';
                 unitInput.placeholder = 'yes/no';
                 valueInput.placeholder = 'yes or no';
