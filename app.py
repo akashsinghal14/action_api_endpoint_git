@@ -250,7 +250,7 @@ def main():
     
     # Get port from environment variable (Azure App Service compatibility)
     port = int(os.environ.get('PORT', 5001))
-    base_url = f"http://localhost:{port}"
+    base_url = f"https://psl-dev-ai-uksouth-b5a3e4d8g3frdugq.uksouth-01.azurewebsites.net"
     
     print(f"📊 Port: {port}")
     print(f"🧠 AI Providers: OpenAI + Claude")
