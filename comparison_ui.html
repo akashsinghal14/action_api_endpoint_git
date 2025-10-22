@@ -447,6 +447,8 @@
                                 <option value="pyroglazing">Pyro Glazing</option>
                                 <option value="doorclosefully">Door Close Fully</option>
                                 <option value="hingesfirerated">Hinges Fire Rated</option>
+                                <option value="coldsmokeseals">Cold Smoke Seals</option>
+                                <option value="keepLockedSign">Keep Locked Sign</option>
                             </select>
                             <span class="input-icon">📐</span>
                         </div>
@@ -773,7 +775,7 @@
             const unitInput = document.getElementById('unit');
             const valueInput = document.getElementById('value');
             
-            if (['intustrips', 'selfclosing', 'shutsign', 'holddevice', 'certivisible', 'glazing', 'pyroglazing', 'doorclosefully', 'hingesfirerated'].includes(this.value)) {
+            if (['intustrips', 'selfclosing', 'shutsign', 'holddevice', 'certivisible', 'glazing', 'pyroglazing', 'doorclosefully', 'hingesfirerated', 'coldsmokeseals', 'keepLockedSign'].includes(this.value)) {
                 unitInput.value = '';
                 unitInput.placeholder = 'yes/no';
                 valueInput.placeholder = 'yes or no';
