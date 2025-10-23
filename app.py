@@ -195,6 +195,36 @@ class RateLimiter:
 
 rate_limiter = RateLimiter()
 
+def get_category_for_measurement(measurement_type: str) -> str:
+    """Get appropriate category for measurement type"""
+    category_mapping = {
+        # Gap measurements
+        'head': 'Firedoor Repair',
+        'hinge': 'Firedoor Repair', 
+        'closing': 'Firedoor Repair',
+        'threshold': 'Firedoor Repair',
+        
+        # Door measurements
+        'door_thickness': 'Door Repair',
+        'frame_depth': 'Door Repair',
+        'door_size': 'Door Repair',
+        
+        # Boolean measurements
+        'intumescent_strips': 'Firedoor Repair',
+        'self_closing_device': 'Firedoor Repair',
+        'keep_shut_sign': 'Signage repair',
+        'hold_open_device': 'Firedoor Repair',
+        'certification_visible': 'Testing, Records, Log Book',
+        'glazing': 'Firedoor Repair',
+        'pyro_glazing': 'Firedoor Repair',
+        'door_close_fully': 'Firedoor Repair',
+        'hinges_fire_rated': 'Firedoor Repair',
+        'cold_smoke_seals': 'Firedoor Repair',
+        'keep_locked_sign': 'Signage repair'
+    }
+    
+    return category_mapping.get(measurement_type, 'Firedoor Repair')
+
 def get_due_date(severity: str) -> str:
     if severity == 'critical':
         days = 0  # Today
@@ -386,7 +416,7 @@ Return JSON:
     "actionItems": [
         {{
             "severity": "critical|high|medium|low",
-            "category": "category name",
+            "category": "Firedoor Repair|Signage repair|Fire door Replacement|Testing, Records, Log Book|Door Replacement required|Door Repair",
             "dueDate": "DD/MM/YYYY",
             "actionDescription": "description",
             "remediationOptions": [
@@ -394,10 +424,32 @@ Return JSON:
                 {{"option": "Option 2: Standard Solution", "plan": "steps"}},
                 {{"option": "Option 3: Comprehensive Fix", "plan": "steps"}}
             ],
-            "confidenceScore": 85
+            "confidenceScore": "70-98"
         }}
     ]
 }}
+
+IMPORTANT: For the "category" field, you MUST choose ONLY from these 6 values:
+- Firedoor Repair
+- Signage repair  
+- Fire door Replacement
+- Testing, Records, Log Book
+- Door Replacement required
+- Door Repair
+
+ANALYZE the action items and remediation options you provide, then choose the most appropriate category based on the actual work required. For example:
+- If action involves replacing the entire door → "Fire door Replacement"
+- If action involves installing/repairing signs → "Signage repair"
+- If action involves adjusting gaps, strips, hinges → "Firedoor Repair"
+- If action involves updating records, testing → "Testing, Records, Log Book"
+- If action involves door replacement due to thickness → "Door Replacement required"
+- If action involves minor door repairs → "Door Repair"
+
+For "confidenceScore", choose a value between 70-98 based on:
+- 90-98%: High confidence (well-established solutions, precise measurements, clear compliance requirements)
+- 80-89%: Medium-high confidence (standard solutions, some minor uncertainties)
+- 70-79%: Medium confidence (complex issues, multiple variables, or less certain solutions)
+- Consider: measurement precision, solution complexity, compliance certainty, and potential variables
 
 If compliant (all measurements meet requirements), return empty actionItems array."""
 
@@ -464,7 +516,7 @@ Return JSON:
     "actionItems": [
         {{
             "severity": "critical|high|medium|low",
-            "category": "category name",
+            "category": "Firedoor Repair|Signage repair|Fire door Replacement|Testing, Records, Log Book|Door Replacement required|Door Repair",
             "dueDate": "DD/MM/YYYY",
             "actionDescription": "description",
             "remediationOptions": [
@@ -472,10 +524,32 @@ Return JSON:
                 {{"option": "Option 2: Standard Solution", "plan": "steps"}},
                 {{"option": "Option 3: Comprehensive Fix", "plan": "steps"}}
             ],
-            "confidenceScore": 85
+            "confidenceScore": "70-98"
         }}
     ]
 }}
+
+IMPORTANT: For the "category" field, you MUST choose ONLY from these 6 values:
+- Firedoor Repair
+- Signage repair  
+- Fire door Replacement
+- Testing, Records, Log Book
+- Door Replacement required
+- Door Repair
+
+ANALYZE the action items and remediation options you provide, then choose the most appropriate category based on the actual work required. For example:
+- If action involves replacing the entire door → "Fire door Replacement"
+- If action involves installing/repairing signs → "Signage repair"
+- If action involves adjusting gaps, strips, hinges → "Firedoor Repair"
+- If action involves updating records, testing → "Testing, Records, Log Book"
+- If action involves door replacement due to thickness → "Door Replacement required"
+- If action involves minor door repairs → "Door Repair"
+
+For "confidenceScore", choose a value between 70-98 based on:
+- 90-98%: High confidence (well-established solutions, precise measurements, clear compliance requirements)
+- 80-89%: Medium-high confidence (standard solutions, some minor uncertainties)
+- 70-79%: Medium confidence (complex issues, multiple variables, or less certain solutions)
+- Consider: measurement precision, solution complexity, compliance certainty, and potential variables
 
 If compliant (all measurements meet requirements), return empty actionItems array."""
 
@@ -659,31 +733,31 @@ def warm_cache_automatically():
     # Common parameter combinations that users typically test
     common_combinations = [
         # Non-compliant numeric values (will trigger AI) - head, hinge, threshold only with values 5-8
-        {"measurement_type": "head", "value": 5, "unit": "mm", "api_key": "claude_key", "ai_provider": "claude"},
-        {"measurement_type": "head", "value": 6, "unit": "mm", "api_key": "claude_key", "ai_provider": "claude"},
-        {"measurement_type": "head", "value": 7, "unit": "mm", "api_key": "claude_key", "ai_provider": "claude"},
-        {"measurement_type": "head", "value": 8, "unit": "mm", "api_key": "claude_key", "ai_provider": "claude"},
-        {"measurement_type": "hinge", "value": 5, "unit": "mm", "api_key": "claude_key", "ai_provider": "claude"},
-        {"measurement_type": "hinge", "value": 6, "unit": "mm", "api_key": "claude_key", "ai_provider": "claude"},
-        {"measurement_type": "hinge", "value": 7, "unit": "mm", "api_key": "claude_key", "ai_provider": "claude"},
-        {"measurement_type": "hinge", "value": 8, "unit": "mm", "api_key": "claude_key", "ai_provider": "claude"},
-        {"measurement_type": "threshold", "value": 5, "unit": "mm", "api_key": "claude_key", "ai_provider": "claude"},
-        {"measurement_type": "threshold", "value": 6, "unit": "mm", "api_key": "claude_key", "ai_provider": "claude"},
-        {"measurement_type": "threshold", "value": 7, "unit": "mm", "api_key": "claude_key", "ai_provider": "claude"},
-        {"measurement_type": "threshold", "value": 8, "unit": "mm", "api_key": "claude_key", "ai_provider": "claude"},
+        {"measurement_type": "head", "value": 5, "unit": "mm", "api_key": "openai_key", "ai_provider": "openai"},
+        {"measurement_type": "head", "value": 6, "unit": "mm", "api_key": "openai_key", "ai_provider": "openai"},
+        {"measurement_type": "head", "value": 7, "unit": "mm", "api_key": "openai_key", "ai_provider": "openai"},
+        {"measurement_type": "head", "value": 8, "unit": "mm", "api_key": "openai_key", "ai_provider": "openai"},
+        {"measurement_type": "hinge", "value": 5, "unit": "mm", "api_key": "openai_key", "ai_provider": "openai"},
+        {"measurement_type": "hinge", "value": 6, "unit": "mm", "api_key": "openai_key", "ai_provider": "openai"},
+        {"measurement_type": "hinge", "value": 7, "unit": "mm", "api_key": "openai_key", "ai_provider": "openai"},
+        {"measurement_type": "hinge", "value": 8, "unit": "mm", "api_key": "openai_key", "ai_provider": "openai"},
+        {"measurement_type": "threshold", "value": 5, "unit": "mm", "api_key": "openai_key", "ai_provider": "openai"},
+        {"measurement_type": "threshold", "value": 6, "unit": "mm", "api_key": "openai_key", "ai_provider": "openai"},
+        {"measurement_type": "threshold", "value": 7, "unit": "mm", "api_key": "openai_key", "ai_provider": "openai"},
+        {"measurement_type": "threshold", "value": 8, "unit": "mm", "api_key": "openai_key", "ai_provider": "openai"},
         
         # All boolean values (will trigger AI)
-        {"measurement_type": "intustrips", "value": "no", "api_key": "claude_key", "ai_provider": "claude"},
-        {"measurement_type": "selfclosing", "value": "no", "api_key": "claude_key", "ai_provider": "claude"},
-        {"measurement_type": "shutsign", "value": "no", "api_key": "claude_key", "ai_provider": "claude"},
-        {"measurement_type": "holddevice", "value": "no", "api_key": "claude_key", "ai_provider": "claude"},
-        {"measurement_type": "certivisible", "value": "no", "api_key": "claude_key", "ai_provider": "claude"},
-        {"measurement_type": "glazing", "value": "no", "api_key": "claude_key", "ai_provider": "claude"},
-        {"measurement_type": "pyroglazing", "value": "no", "api_key": "claude_key", "ai_provider": "claude"},
-        {"measurement_type": "doorclosefully", "value": "no", "api_key": "claude_key", "ai_provider": "claude"},
-        {"measurement_type": "hingesfirerated", "value": "no", "api_key": "claude_key", "ai_provider": "claude"},
-        {"measurement_type": "coldsmokeseals", "value": "no", "api_key": "claude_key", "ai_provider": "claude"},
-        {"measurement_type": "keepLockedSign", "value": "no", "api_key": "claude_key", "ai_provider": "claude"},
+        {"measurement_type": "intustrips", "value": "no", "api_key": "openai_key", "ai_provider": "openai"},
+        {"measurement_type": "selfclosing", "value": "no", "api_key": "openai_key", "ai_provider": "openai"},
+        {"measurement_type": "shutsign", "value": "no", "api_key": "openai_key", "ai_provider": "openai"},
+        {"measurement_type": "holddevice", "value": "no", "api_key": "openai_key", "ai_provider": "openai"},
+        {"measurement_type": "certivisible", "value": "no", "api_key": "openai_key", "ai_provider": "openai"},
+        {"measurement_type": "glazing", "value": "no", "api_key": "openai_key", "ai_provider": "openai"},
+        {"measurement_type": "pyroglazing", "value": "no", "api_key": "openai_key", "ai_provider": "openai"},
+        {"measurement_type": "doorclosefully", "value": "no", "api_key": "openai_key", "ai_provider": "openai"},
+        {"measurement_type": "hingesfirerated", "value": "no", "api_key": "openai_key", "ai_provider": "openai"},
+        {"measurement_type": "coldsmokeseals", "value": "no", "api_key": "openai_key", "ai_provider": "openai"},
+        {"measurement_type": "keepLockedSign", "value": "no", "api_key": "openai_key", "ai_provider": "openai"},
         
         # Compliant values (static responses)
         {"measurement_type": "head", "value": 2, "unit": "mm", "api_key": None},
@@ -809,7 +883,7 @@ def handle_numeric_measurement_internal(gap_type, value, unit, api_key, model, a
         action_items = []
         if not is_compliant:
             severity = 'critical' if threshold_type == 'max_allowed' else 'medium'
-            category = gap_type.replace('_', ' ').title() + ' Compliance'
+            category = get_category_for_measurement(gap_type)
             
             if threshold_type == 'max_allowed':
                 description = f'{gap_type.replace("_", " ").title()} ({value}mm) exceeds maximum allowed ({threshold}mm).'
@@ -872,7 +946,7 @@ def handle_boolean_measurement_internal(measurement_type, value, api_key, model,
                 action_items = []
         else:
             if not is_compliant:
-                category = measurement_type.replace('_', ' ').title() + ' Compliance'
+                category = get_category_for_measurement(measurement_type)
                 description = f'{measurement_type.replace("_", " ").title()} is missing. This is critical for fire door compliance.'
                 
                 action_items.append({
@@ -949,7 +1023,7 @@ def slim_head(value=None, unit=None):
         if not is_compliant:
             action_items.append({
                 'severity': 'critical',
-                'category': 'Head Gap Compliance',
+                'category': get_category_for_measurement('head'),
                 'dueDate': get_due_date('critical'),
                 'actionDescription': f'Head gap ({value}mm) exceeds maximum allowed ({max_gap}mm).',
                 'remediationOptions': [
@@ -1092,7 +1166,7 @@ def handle_numeric_measurement_unified(gap_type, value, unit, api_key, model, ai
         action_items = []
         if not is_compliant:
             severity = 'critical' if threshold_type == 'max_allowed' else 'medium'
-            category = gap_type.replace('_', ' ').title() + ' Compliance'
+            category = get_category_for_measurement(gap_type)
             
             if threshold_type == 'max_allowed':
                 description = f'{gap_type.replace("_", " ").title()} ({value}mm) exceeds maximum allowed ({threshold}mm).'
@@ -1157,7 +1231,7 @@ def handle_boolean_measurement_unified(measurement_type, value, api_key, model, 
                 action_items = []
         else:
             if not is_compliant:
-                category = measurement_type.replace('_', ' ').title() + ' Compliance'
+                category = get_category_for_measurement(measurement_type)
                 description = f'{measurement_type.replace("_", " ").title()} is missing. This is critical for fire door compliance.'
                 
                 action_items.append({
