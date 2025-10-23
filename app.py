@@ -206,7 +206,14 @@ def get_due_date(severity: str) -> str:
         days = 180
     else:
         days = 90  # Default to medium
-    date = datetime.now() + timedelta(days=days)
+    
+    # Use UTC time to avoid timezone issues
+    from datetime import timezone
+    date = datetime.now(timezone.utc) + timedelta(days=days)
+    
+    # Debug logging
+    print(f"Due date calculation: severity={severity}, days={days}, date={date.strftime('%d/%m/%Y')}")
+    
     return date.strftime('%d/%m/%Y')
 
 def calculate_openai_cost(model, input_tokens, output_tokens):
