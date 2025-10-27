@@ -115,3 +115,8 @@ instance/
 #otherfiles
 check_available_models.py
 env_claude.example
+
+# Azure publish settings (contains sensitive credentials)
+.PublishSettings
+*.PublishSettings
+publishsettings.xml
