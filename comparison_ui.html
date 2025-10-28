@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fire Door Compliance Assessment Tool</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+            min-height: 100vh;
+            padding: 10px;
+        }
+
+        .container {
+            max-width: 1600px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 25px 50px rgba(0,0,0,0.15);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #1a365d 0%, #2c5282 100%);
+            color: white;
+            padding: 10px;
+            text-align: center;
+            position: relative;
+        }
+
+        .header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="grain" width="100" height="100" patternUnits="userSpaceOnUse"><circle cx="25" cy="25" r="1" fill="white" opacity="0.1"/><circle cx="75" cy="75" r="1" fill="white" opacity="0.1"/><circle cx="50" cy="10" r="0.5" fill="white" opacity="0.1"/></pattern></defs><rect width="100" height="100" fill="url(%23grain)"/></svg>');
+            opacity: 0.3;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 15px;
+            position: relative;
+            z-index: 1;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .header p {
+            font-size: 1.3em;
+            opacity: 0.95;
+            position: relative;
+            z-index: 1;
+            margin-bottom: 10px;
+        }
+
+        .header .subtitle {
+            font-size: 1em;
+            opacity: 0.8;
+            position: relative;
+            z-index: 1;
+        }
+
+        .controls {
+            padding: 20px;
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            border-bottom: 1px solid #dee2e6;
+        }
+
+        .measurement-section {
+            background: white;
+            border-radius: 15px;
+            padding: 10px;
+            margin-bottom: 10px;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+            border: 2px solid #e9ecef;
+        }
+
+        .section-title {
+            font-size: 1.4em;
+            font-weight: 700;
+            color: #1a365d;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .section-title::before {
+            content: '📏';
+            font-size: 1.2em;
+        }
+
+        .form-group {
+            margin-bottom: 25px;
+        }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 25px;
+            margin-bottom: 20px;
+        }
+
+        .form-col {
+            display: flex;
+            flex-direction: column;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: 600;
+            color: #2c3e50;
+            font-size: 1.1em;
+        }
+
+        .input-group {
+            position: relative;
+        }
+
+        select, input {
+            width: 100%;
+            padding: 10px 20px;
+            border: 2px solid #e9ecef;
+            border-radius: 12px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+            background: white;
+        }
+
+        select:focus, input:focus {
+            outline: none;
+            border-color: #3182ce;
+            box-shadow: 0 0 0 3px rgba(49, 130, 206, 0.1);
+            transform: translateY(-2px);
+        }
+
+        .input-icon {
+            position: absolute;
+            right: 15px;
+            top: 50%;
+            transform: translateY(-50%);
+            color: #a0aec0;
+            font-size: 1.2em;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #3182ce 0%, #2c5282 100%);
+            color: white;
+            border: none;
+            padding: 18px 40px;
+            border-radius: 15px;
+            font-size: 18px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            width: 100%;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            box-shadow: 0 8px 25px rgba(49, 130, 206, 0.3);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: left 0.5s;
+        }
+
+        .btn:hover::before {
+            left: 100%;
+        }
+
+        .btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 12px 35px rgba(49, 130, 206, 0.4);
+        }
+
+        .btn:active {
+            transform: translateY(-1px);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: 0 4px 15px rgba(49, 130, 206, 0.2);
+        }
+
+        .results {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            padding: 15px;
+            background: #f8f9fa;
+        }
+
+        .api-result {
+            border: 3px solid #e9ecef;
+            border-radius: 20px;
+            overflow: hidden;
+            transition: all 0.3s ease;
+            background: white;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+
+        .api-result:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+        }
+
+        .api-result.openai {
+            border-color: #10a37f;
+            box-shadow: 0 10px 30px rgba(16, 163, 127, 0.2);
+        }
+
+        .api-result.claude {
+            border-color: #d97706;
+            box-shadow: 0 10px 30px rgba(217, 119, 6, 0.2);
+        }
+
+        .api-header {
+            padding: 10px 25px;
+            font-weight: 700;
+            font-size: 1.4em;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .api-header::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><defs><pattern id="dots" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="10" cy="10" r="1" fill="white" opacity="0.3"/></pattern></defs><rect width="100" height="100" fill="url(%23dots)"/></svg>');
+            opacity: 0.3;
+        }
+
+        .api-header.openai {
+            background: linear-gradient(135deg, #10a37f 0%, #0d8a6b 100%);
+            color: white;
+        }
+
+        .api-header.claude {
+            background: linear-gradient(135deg, #d97706 0%, #b45309 100%);
+            color: white;
+        }
+
+        .api-header h3 {
+            position: relative;
+            z-index: 1;
+            margin: 0;
+        }
+
+        .api-content {
+            padding: 20px;
+        }
+
+        .status {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.9em;
+            font-weight: 600;
+            margin-bottom: 15px;
+        }
+
+        .status.compliant {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .status.non-compliant {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .metric {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 10px;
+            padding: 8px 0;
+            border-bottom: 1px solid #f1f3f4;
+        }
+
+        .metric:last-child {
+            border-bottom: none;
+        }
+
+        .metric-label {
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .metric-value {
+            color: #6c757d;
+        }
+
+        .cost {
+            font-weight: 700;
+            color: #28a745;
+        }
+
+        .action-items {
+            margin-top: 20px;
+        }
+
+        .action-item {
+            background: #f8f9fa;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            margin-bottom: 15px;
+            border-radius: 0 8px 8px 0;
+        }
+
+        .action-item.high {
+            border-left-color: #dc3545;
+        }
+
+        .action-item.medium {
+            border-left-color: #ffc107;
+        }
+
+        .action-item.low {
+            border-left-color: #28a745;
+        }
+
+        .action-item h4 {
+            color: #2c3e50;
+            margin-bottom: 8px;
+        }
+
+        .action-item p {
+            color: #6c757d;
+            margin-bottom: 10px;
+        }
+
+        .remediation-options {
+            margin-top: 10px;
+        }
+
+        .remediation-option {
+            background: white;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 6px;
+            border: 1px solid #e9ecef;
+        }
+
+        .remediation-option strong {
+            color: #667eea;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #6c757d;
+        }
+
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 10px 0;
+        }
+
+        .empty {
+            text-align: center;
+            color: #6c757d;
+            font-style: italic;
+            padding: 40px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 768px) {
+            .results {
+                grid-template-columns: 1fr;
+            }
+            
+            .form-row {
+                flex-direction: column;
+            }
+            
+            .header h1 {
+                font-size: 2.2em;
+            }
+            
+            .header p {
+                font-size: 1.1em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>🔥 Fire Door Compliance Assessment</h2>
+
+          
+        </div>
+
+        <div class="controls">
+            <div class="measurement-section">
+                <div class="section-title">Measurement Details</div>
+                <div class="form-row">
+                    <div class="form-col">
+                        <label for="apiType">📏 Measurement Type</label>
+                        <div class="input-group">
+                            <select id="apiType">
+                                <option value="">Select measurement type...</option>
+                                <option value="head">Head Gap (mm)</option>
+                                <option value="hinge">Hinge Gap (mm)</option>
+                                <option value="closing">Closing Gap (mm)</option>
+                                <option value="threshold">Threshold Gap (mm)</option>
+                                <option value="doorthick">Door Thickness (mm)</option>
+                                <option value="framedepth">Frame Depth (mm)</option>
+                                <option value="doorsize">Door Size (mm)</option>
+                                <option value="intustrips">Intumescent Strips</option>
+                                <option value="selfclosing">Self-Closing Device</option>
+                                <option value="shutsign">Keep Shut Sign</option>
+                                <option value="holddevice">Hold Open Device</option>
+                                <option value="certivisible">Certification Visible</option>
+                                <option value="glazing">Contains Glazing</option>
+                                <option value="pyroglazing">Pyro Glazing</option>
+                                <option value="doorclosefully">Door Close Fully</option>
+                                <option value="hingesfirerated">Hinges Fire Rated</option>
+                                <option value="coldsmokeseals">Cold Smoke Seals</option>
+                                <option value="keepLockedSign">Keep Locked Sign</option>
+                            </select>
+                            <span class="input-icon">📐</span>
+                        </div>
+                    </div>
+                    <div class="form-col">
+                        <label for="value">📊 Measured Value</label>
+                        <div class="input-group">
+                            <input type="text" id="value" placeholder="Enter measurement (e.g., 5, 22, yes, no)">
+                            <span class="input-icon">🔢</span>
+                        </div>
+                    </div>
+                    <div class="form-col">
+                        <label for="unit">📏 Unit of Measurement</label>
+                        <div class="input-group">
+                            <input type="text" id="unit" placeholder="mm" value="mm">
+                            <span class="input-icon">📐</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="measurement-section">
+                <div class="section-title">AI Configuration</div>
+                <div class="form-row">
+                    <div class="form-col">
+                        <label for="openaiKey">🤖 OpenAI API Key <span id="openaiStatus"></span></label>
+                        <div class="input-group">
+                            <input type="password" id="openaiKey" placeholder="sk-...">
+                            <span class="input-icon">🔑</span>
+                        </div>
+                    </div>
+                    <div class="form-col">
+                        <label for="claudeKey">🧠 Claude API Key <span id="claudeStatus"></span></label>
+                        <div class="input-group">
+                            <input type="password" id="claudeKey" placeholder="sk-ant-...">
+                            <span class="input-icon">🔑</span>
+                        </div>
+                    </div>
+                    <div class="form-col">
+                        <label for="model">⚙️ AI Model (Optional)</label>
+                        <div class="input-group">
+                            <input type="text" id="model" placeholder="gpt-4o, claude-sonnet-4-20250514">
+                            <span class="input-icon">⚡</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <button class="btn" onclick="compareAPIs()">
+                🔍 Analyze Fire Door Compliance
+            </button>
+        </div>
+
+        <div class="results" id="results">
+            <div class="empty">
+                <div style="text-align: center; padding: 60px 20px;">
+                    <div style="font-size: 4em; margin-bottom: 20px;">🔍</div>
+                    <h3 style="color: #2c3e50; margin-bottom: 15px;">Ready to Analyze</h3>
+                    <p style="color: #6c757d; font-size: 1.1em;">Select a measurement type and click "Analyze Fire Door Compliance" to see AI-powered results</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Load API keys from environment variables when page loads
+        async function loadAPIKeys() {
+            try {
+                const response = await fetch('/api/keys');
+                const keys = await response.json();
+                
+                // Auto-fill the API key fields
+                const openaiKey = keys.openai_key || '';
+                const claudeKey = keys.claude_key || '';
+                
+                document.getElementById('openaiKey').value = openaiKey;
+                document.getElementById('claudeKey').value = claudeKey;
+                
+                // Show status indicators
+                document.getElementById('openaiStatus').innerHTML = openaiKey ? 
+                    '<span style="color: green;">✅ Loaded from environment</span>' : 
+                    '<span style="color: orange;">⚠️ Enter manually</span>';
+                    
+                document.getElementById('claudeStatus').innerHTML = claudeKey ? 
+                    '<span style="color: green;">✅ Loaded from environment</span>' : 
+                    '<span style="color: orange;">⚠️ Enter manually</span>';
+                
+                // Set default models if not already set
+                const modelInput = document.getElementById('model');
+                if (!modelInput.value) {
+                    modelInput.placeholder = `${keys.openai_model}, ${keys.claude_model}`;
+                }
+            } catch (error) {
+                console.log('Could not load API keys from environment:', error);
+                // Show error status
+                document.getElementById('openaiStatus').innerHTML = '<span style="color: red;">❌ Error loading</span>';
+                document.getElementById('claudeStatus').innerHTML = '<span style="color: red;">❌ Error loading</span>';
+            }
+        }
+
+        // Load keys when page loads
+        document.addEventListener('DOMContentLoaded', loadAPIKeys);
+
+        async function compareAPIs() {
+            const apiType = document.getElementById('apiType').value;
+            const value = document.getElementById('value').value;
+            const unit = document.getElementById('unit').value;
+            const openaiKey = document.getElementById('openaiKey').value;
+            const claudeKey = document.getElementById('claudeKey').value;
+            const model = document.getElementById('model').value;
+
+            if (!apiType || !value) {
+                alert('Please select a measurement type and enter a value');
+                return;
+            }
+
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = `
+                <div class="api-result openai">
+                    <div class="api-header openai">
+                        <h3>🤖 OpenAI GPT-4 Analysis</h3>
+                    </div>
+                    <div class="api-content">
+                        <div class="loading">
+                            <div style="text-align: center; padding: 40px;">
+                                <div style="font-size: 3em; margin-bottom: 20px; animation: spin 1s linear infinite;">🔄</div>
+                                <h4 style="color: #10a37f; margin-bottom: 10px;">Analyzing with OpenAI...</h4>
+                                <p style="color: #6c757d;">Processing fire door compliance data</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="api-result claude">
+                    <div class="api-header claude">
+                        <h3>🧠 Claude AI Analysis</h3>
+                    </div>
+                    <div class="api-content">
+                        <div class="loading">
+                            <div style="text-align: center; padding: 40px;">
+                                <div style="font-size: 3em; margin-bottom: 20px; animation: spin 1s linear infinite;">🔄</div>
+                                <h4 style="color: #d97706; margin-bottom: 10px;">Analyzing with Claude...</h4>
+                                <p style="color: #6c757d;">Processing fire door compliance data</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            try {
+                const [openaiResult, claudeResult] = await Promise.all([
+                    callAPI('openai', apiType, value, unit, openaiKey, model),
+                    callAPI('claude', apiType, value, unit, claudeKey, model)
+                ]);
+
+                displayResults(openaiResult, claudeResult);
+            } catch (error) {
+                resultsDiv.innerHTML = `<div class="error">Error: ${error.message}</div>`;
+            }
+        }
+
+        async function callAPI(provider, apiType, value, unit, apiKey, model) {
+            const baseUrl = window.location.origin;
+            const url = `${baseUrl}/api/action_item/analyze`; // Unified endpoint
+            
+            // For POST, body is used, not URL params for data
+            const bodyData = {
+                measurement_type: apiType,
+                value: value,
+                api_key: apiKey,
+                model: model,
+                ai_provider: provider
+            };
+            if (unit) bodyData.unit = unit;
+
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(bodyData)
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.error || `HTTP ${response.status}`);
+                }
+                
+                return { provider, data, error: null };
+            } catch (error) {
+                return { provider, data: null, error: error.message };
+            }
+        }
+
+        function displayResults(openaiResult, claudeResult) {
+            const resultsDiv = document.getElementById('results');
+            
+            resultsDiv.innerHTML = `
+                <div class="api-result openai">
+                    <div class="api-header openai">
+                        <h3>🤖 OpenAI GPT-4 Analysis</h3>
+                    </div>
+                    <div class="api-content">
+                        ${formatResult(openaiResult)}
+                    </div>
+                </div>
+                <div class="api-result claude">
+                    <div class="api-header claude">
+                        <h3>🧠 Claude AI Analysis</h3>
+                    </div>
+                    <div class="api-content">
+                        ${formatResult(claudeResult)}
+                    </div>
+                </div>
+            `;
+        }
+
+        function formatResult(result) {
+            if (result.error) {
+                return `
+                    <div class="error" style="background: #fed7d7; color: #c53030; padding: 20px; border-radius: 10px; text-align: center;">
+                        <div style="font-size: 2em; margin-bottom: 10px;">⚠️</div>
+                        <h4 style="margin-bottom: 10px;">Analysis Error</h4>
+                        <p>${result.error}</p>
+                    </div>
+                `;
+            }
+
+            const data = result.data;
+            if (!data) {
+                return `
+                    <div class="empty" style="text-align: center; padding: 40px;">
+                        <div style="font-size: 3em; margin-bottom: 15px;">📊</div>
+                        <h4 style="color: #6c757d;">No Data Received</h4>
+                    </div>
+                `;
+            }
+
+            const compliantClass = data.compliant ? 'compliant' : 'non-compliant';
+            const compliantText = data.compliant ? '✅ COMPLIANT' : '❌ NON-COMPLIANT';
+            const compliantIcon = data.compliant ? '✅' : '❌';
+
+            let html = `
+                <div class="status ${compliantClass}" style="text-align: center; padding: 20px; border-radius: 15px; margin-bottom: 25px; font-size: 1.2em; font-weight: 700;">
+                    <div style="font-size: 2em; margin-bottom: 10px;">${compliantIcon}</div>
+                    ${compliantText}
+                </div>
+                
+                <div class="metric" style="background: #f8f9fa; padding: 15px; border-radius: 10px; margin-bottom: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span class="metric-label" style="font-weight: 600; color: #2c3e50;">📏 Measurement:</span>
+                        <span class="metric-value" style="font-size: 1.2em; font-weight: 700; color: #3182ce;">${data.value}${data.unit ? ' ' + data.unit : ''}</span>
+                    </div>
+                </div>
+            `;
+
+            if (data.actionItems && data.actionItems.length > 0) {
+                html += '<div class="action-items" style="margin-top: 25px;">';
+                html += '<h4 style="color: #2c3e50; margin-bottom: 20px; font-size: 1.3em;">🔧 Required Actions</h4>';
+                data.actionItems.forEach(item => {
+                    const severityColor = item.severity === 'high' ? '#dc3545' : item.severity === 'medium' ? '#ffc107' : '#28a745';
+                    const severityIcon = item.severity === 'high' ? '🔴' : item.severity === 'medium' ? '🟡' : '🟢';
+                    
+                    html += `
+                        <div class="action-item ${item.severity}" style="background: white; border-left: 5px solid ${severityColor}; padding: 20px; margin-bottom: 20px; border-radius: 0 15px 15px 0; box-shadow: 0 5px 15px rgba(0,0,0,0.1);">
+                            <div style="display: flex; align-items: center; margin-bottom: 15px;">
+                                <span style="font-size: 1.5em; margin-right: 10px;">${severityIcon}</span>
+                                <h4 style="color: #2c3e50; margin: 0; font-size: 1.2em;">${item.category}</h4>
+                            </div>
+                            <p style="color: #6c757d; margin-bottom: 15px; line-height: 1.6;"><strong>📋 Description:</strong> ${item.actionDescription}</p>
+                            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 20px;">
+                                <div style="background: #f8f9fa; padding: 10px; border-radius: 8px;">
+                                    <strong style="color: #2c3e50;">📅 Due Date:</strong><br>
+                                    <span style="color: #3182ce; font-weight: 600;">${item.dueDate}</span>
+                                </div>
+                                <div style="background: #f8f9fa; padding: 10px; border-radius: 8px;">
+                                    <strong style="color: #2c3e50;">🎯 Confidence:</strong><br>
+                                    <span style="color: #28a745; font-weight: 600;">${item.confidenceScore}%</span>
+                                </div>
+                            </div>
+                            ${item.remediationOptions ? `
+                                <div class="remediation-options" style="margin-top: 20px;">
+                                    <h5 style="color: #2c3e50; margin-bottom: 15px; font-size: 1.1em;">🛠️ Remediation Options:</h5>
+                                    ${item.remediationOptions.map((option, index) => `
+                                        <div class="remediation-option" style="background: #f8f9fa; padding: 15px; margin: 10px 0; border-radius: 10px; border: 1px solid #e9ecef;">
+                                            <div style="display: flex; align-items: flex-start; gap: 10px;">
+                                                <span style="background: #3182ce; color: white; border-radius: 50%; width: 25px; height: 25px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.9em; flex-shrink: 0;">${index + 1}</span>
+                                                <div>
+                                                    <strong style="color: #2c3e50; display: block; margin-bottom: 5px;">${option.option}</strong>
+                                                    <p style="color: #6c757d; margin: 0; line-height: 1.5;">${option.plan}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            ` : ''}
+                        </div>
+                    `;
+                });
+                html += '</div>';
+            } else if (data.compliant) {
+                html += `
+                    <div class="empty" style="text-align: center; padding: 40px; background: #d4edda; border-radius: 15px; margin-top: 25px;">
+                        <div style="font-size: 3em; margin-bottom: 15px;">✅</div>
+                        <h4 style="color: #155724; margin-bottom: 10px;">No Action Required</h4>
+                        <p style="color: #155724;">Measurement is fully compliant with fire safety standards</p>
+                    </div>
+                `;
+            } else {
+                html += `
+                    <div class="empty" style="text-align: center; padding: 40px; background: #f8f9fa; border-radius: 15px; margin-top: 25px;">
+                        <div style="font-size: 3em; margin-bottom: 15px;">📊</div>
+                        <h4 style="color: #6c757d;">No Action Items Available</h4>
+                    </div>
+                `;
+            }
+
+            return html;
+        }
+
+        // Auto-fill unit based on API type
+        document.getElementById('apiType').addEventListener('change', function() {
+            const unitInput = document.getElementById('unit');
+            const valueInput = document.getElementById('value');
+            
+            if (['intustrips', 'selfclosing', 'shutsign', 'holddevice', 'certivisible', 'glazing', 'pyroglazing', 'doorclosefully', 'hingesfirerated', 'coldsmokeseals', 'keepLockedSign'].includes(this.value)) {
+                unitInput.value = '';
+                unitInput.placeholder = 'yes/no';
+                valueInput.placeholder = 'yes or no';
+            } else {
+                unitInput.value = 'mm';
+                unitInput.placeholder = 'mm';
+                valueInput.placeholder = 'e.g., 5, 22';
+            }
+        });
+    </script>
+</body>
+</html>

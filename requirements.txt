@@ -1,0 +1,9 @@
+Flask==2.3.3
+Flask-CORS==4.0.0
+openai>=1.0.0
+anthropic>=0.40.0
+python-dotenv==1.0.0
+gunicorn==21.2.0
+waitress==2.1.2
+Werkzeug==2.3.7
+requests
