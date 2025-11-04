@@ -11,6 +11,9 @@ from typing import Optional, Dict, Any
 import os
 from dotenv import load_dotenv
 from collections import OrderedDict
+import base64
+import requests
+from urllib.parse import urlparse
 
 # Load environment variables from .env file
 load_dotenv()
@@ -1264,6 +1267,305 @@ def handle_boolean_measurement_unified(measurement_type, value, api_key, model, 
         
     except Exception as e:
         return jsonify({'error': f'{measurement_type} analysis failed: {str(e)}'}), 500
+
+def analyze_image_compliance(image_data: bytes, api_key: str, model: str = 'gpt-4o'):
+    """Analyze door image for compliance using OpenAI Vision API"""
+    try:
+        # Encode image to base64
+        image_base64 = base64.b64encode(image_data).decode('utf-8')
+        
+        # Determine image format from file signature
+        image_format = 'jpeg'  # Default
+        if image_data.startswith(b'\x89PNG'):
+            image_format = 'png'
+        elif image_data.startswith(b'GIF'):
+            image_format = 'gif'
+        elif image_data.startswith(b'RIFF') and b'WEBP' in image_data[:12]:
+            image_format = 'webp'
+        elif image_data.startswith(b'\xff\xd8\xff'):
+            image_format = 'jpeg'
+        # Default to jpeg if format not detected
+        
+        # Create the vision prompt
+        vision_prompt = """You are a UK fire safety expert analyzing a fire door image. 
+
+Analyze this image and check for the following 4 components:
+1. Hinge - Check if door hinges are present and properly installed
+2. Glazing - Check if any glazing (glass) is present in the door
+3. Intumescent Strips - Check if intumescent strips are visible around the door edges
+4. Handles - Check if door handles/levers are present and functional
+
+For each component, determine:
+- Is it visible/detectable in the image?
+- Is it present/installed?
+- Is it compliant? (Present and properly installed = compliant)
+
+Return your analysis in JSON format:
+{
+    "components": {
+        "hinge": {
+            "visible": true/false,
+            "present": true/false,
+            "compliant": true/false,
+            "description": "one-line description of what you see"
+        },
+        "glazing": {
+            "visible": true/false,
+            "present": true/false,
+            "compliant": true/false,
+            "description": "one-line description of what you see"
+        },
+        "intumescent_strips": {
+            "visible": true/false,
+            "present": true/false,
+            "compliant": true/false,
+            "description": "one-line description of what you see"
+        },
+        "handles": {
+            "visible": true/false,
+            "present": true/false,
+            "compliant": true/false,
+            "description": "one-line description of what you see"
+        }
+    },
+    "overall_compliance": true/false,
+    "analysis_summary": "brief overall summary"
+}
+
+IMPORTANT RULES:
+- If a component is NOT visible in the image, set visible=false, present=false, compliant=false and description should mention "not visible"
+- If visible but not present/installed, set visible=true, present=false, compliant=false
+- If visible and present, set visible=true, present=true, compliant=true
+- overall_compliance should be true only if ALL visible components are compliant. If any component is not visible, set overall_compliance to false."""
+
+        # Rate limiting check
+        if not rate_limiter.can_make_call():
+            raise Exception('Rate limit exceeded')
+        
+        # Call OpenAI Vision API
+        client = openai.OpenAI(api_key=api_key)
+        response = client.chat.completions.create(
+            model=model,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": vision_prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/{image_format};base64,{image_base64}"
+                            }
+                        }
+                    ]
+                }
+            ],
+            max_tokens=1000,
+            temperature=0.3
+        )
+        
+        ai_response = response.choices[0].message.content
+        input_tokens = response.usage.prompt_tokens
+        output_tokens = response.usage.completion_tokens
+        total_tokens = response.usage.total_tokens
+        cost = calculate_openai_cost(model, input_tokens, output_tokens)
+        
+        print(f"OpenAI Vision API response: {ai_response[:200]}...")
+        print(f"Cost: ${cost} (Input: {input_tokens}, Output: {output_tokens})")
+        
+        # Parse JSON response
+        json_pattern = re.compile(r'\{[\s\S]*\}')
+        json_match = json_pattern.search(ai_response)
+        
+        if not json_match:
+            raise ValueError('No JSON found in AI response')
+        
+        parsed_response = json.loads(json_match.group(0))
+        
+        # Validate and process response
+        if 'components' not in parsed_response or 'overall_compliance' not in parsed_response:
+            raise ValueError('Invalid response format from AI')
+        
+        # Build compliance status
+        compliance_status = parsed_response.get('overall_compliance', False)
+        
+        # Extract component details
+        components = parsed_response.get('components', {})
+        component_breakdown = {}
+        for component_name in ['hinge', 'glazing', 'intumescent_strips', 'handles']:
+            comp_data = components.get(component_name, {})
+            component_breakdown[component_name] = {
+                'visible': comp_data.get('visible', False),
+                'present': comp_data.get('present', False),
+                'compliant': comp_data.get('compliant', False),
+                'description': comp_data.get('description', 'Not analyzed')
+            }
+        
+        result = {
+            'success': True,
+            'compliance_status': compliance_status,
+            'components': component_breakdown,
+            'analysis_summary': parsed_response.get('analysis_summary', ''),
+            'timestamp': datetime.now().isoformat(),
+            'ai_model': model,
+            'tokens_used': total_tokens,
+            'input_tokens': input_tokens,
+            'output_tokens': output_tokens,
+            'cost_usd': cost
+        }
+        
+        return result
+        
+    except Exception as e:
+        print(f"Error in analyze_image_compliance: {e}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
+        return None
+
+def download_image_from_url(url: str, max_size: int = 20 * 1024 * 1024, timeout: int = 30) -> bytes:
+    """Download image from URL with size and timeout validation"""
+    try:
+        # Validate URL
+        parsed = urlparse(url)
+        if not parsed.scheme or not parsed.netloc:
+            raise ValueError('Invalid URL format')
+        
+        # Only allow HTTP and HTTPS
+        if parsed.scheme not in ['http', 'https']:
+            raise ValueError(f'Unsupported URL scheme: {parsed.scheme}. Only HTTP and HTTPS are allowed.')
+        
+        # Download image
+        response = requests.get(url, timeout=timeout, stream=True)
+        response.raise_for_status()
+        
+        # Check content type
+        content_type = response.headers.get('content-type', '').lower()
+        if not content_type.startswith('image/'):
+            raise ValueError(f'URL does not point to an image. Content-Type: {content_type}')
+        
+        # Stream download with size limit
+        image_data = b''
+        for chunk in response.iter_content(chunk_size=8192):
+            image_data += chunk
+            if len(image_data) > max_size:
+                raise ValueError(f'Image too large. Maximum size is {max_size / 1024 / 1024}MB')
+        
+        if len(image_data) == 0:
+            raise ValueError('Downloaded image is empty')
+        
+        return image_data
+        
+    except requests.exceptions.RequestException as e:
+        raise ValueError(f'Failed to download image from URL: {str(e)}')
+    except Exception as e:
+        raise ValueError(f'Error downloading image: {str(e)}')
+
+@app.route('/api/compliance_check/analyze', methods=['POST'])
+def analyze_compliance_image():
+    """Analyze door image for compliance check using OpenAI Vision API
+    
+    Supports three input formats:
+    1. JSON with image_url: Download image from URL
+    2. JSON with image_base64: Base64-encoded image
+    3. Multipart form-data: Direct file upload with 'image' key
+    """
+    try:
+        image_data = None
+        api_key_param = None
+        model = None
+        
+        # Check if request is JSON or multipart (file upload)
+        if request.is_json:
+            # JSON request
+            data = request.get_json() or {}
+            api_key_param = data.get('api_key')
+            model = data.get('model') or DEFAULT_OPENAI_MODEL
+            
+            # Check for image URL first (most common for production)
+            image_url = data.get('image_url') or data.get('imageUrl')
+            image_base64_str = data.get('image_base64') or data.get('imageBase64')
+            
+            if image_url:
+                # Download image from URL
+                try:
+                    print(f"Downloading image from URL: {image_url}")
+                    image_data = download_image_from_url(image_url)
+                    print(f"Successfully downloaded image: {len(image_data)} bytes")
+                except Exception as e:
+                    return jsonify({'error': f'Failed to download image from URL: {str(e)}'}), 400
+            
+            elif image_base64_str:
+                # Decode base64 image
+                try:
+                    # Remove data URL prefix if present (e.g., "data:image/jpeg;base64,")
+                    if ',' in image_base64_str:
+                        image_base64_str = image_base64_str.split(',')[1]
+                    
+                    image_data = base64.b64decode(image_base64_str)
+                    print(f"Successfully decoded base64 image: {len(image_data)} bytes")
+                except Exception as e:
+                    return jsonify({'error': f'Invalid base64 image data: {str(e)}'}), 400
+            else:
+                return jsonify({
+                    'error': 'No image provided. Use one of: "image_url" (URL to image), "image_base64" (base64 string), or multipart/form-data with "image" file.'
+                }), 400
+        else:
+            # Multipart form-data request with file upload
+            if 'image' not in request.files:
+                return jsonify({
+                    'error': 'No image file provided. Please upload an image file with key "image", or use JSON with "image_url" or "image_base64" field.'
+                }), 400
+            
+            image_file = request.files['image']
+            
+            # Validate file
+            if image_file.filename == '':
+                return jsonify({'error': 'No file selected'}), 400
+            
+            # Get optional parameters from form data
+            api_key_param = request.form.get('api_key') or request.args.get('api_key')
+            model = request.form.get('model') or request.args.get('model') or DEFAULT_OPENAI_MODEL
+            
+            # Read image data
+            image_data = image_file.read()
+        
+        # Validate image data
+        if not image_data or len(image_data) == 0:
+            return jsonify({'error': 'Image data is empty'}), 400
+        
+        # Validate image size (max 20MB for OpenAI)
+        max_size = 20 * 1024 * 1024  # 20MB
+        if len(image_data) > max_size:
+            return jsonify({'error': f'Image file too large. Maximum size is 20MB, got {len(image_data) / 1024 / 1024:.2f}MB'}), 400
+        
+        # Validate API key
+        if not api_key_param:
+            return jsonify({'error': 'API key is required. Please provide api_key parameter.'}), 400
+        
+        # Resolve API key
+        real_key = resolve_api_key(api_key_param, 'openai')
+        if not real_key:
+            return jsonify({'error': 'Invalid OpenAI API key'}), 400
+        
+        # Validate model (must be vision-capable)
+        if model not in ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo']:
+            # Default to gpt-4o if model doesn't support vision
+            model = 'gpt-4o'
+            print(f"Warning: Model may not support vision, defaulting to gpt-4o")
+        
+        # Analyze image
+        result = analyze_image_compliance(image_data, real_key, model)
+        
+        if not result:
+            return jsonify({'error': 'Failed to analyze image. Please check image format and try again.'}), 500
+        
+        return jsonify(result)
+        
+    except Exception as e:
+        print(f"Error in analyze_compliance_image: {e}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
+        return jsonify({'error': f'Compliance check failed: {str(e)}'}), 500
 
 # Monitoring Endpoints
 
