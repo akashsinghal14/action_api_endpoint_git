@@ -120,3 +120,5 @@ env_claude.example
 .PublishSettings
 *.PublishSettings
 publishsettings.xml
+
+main2.py
