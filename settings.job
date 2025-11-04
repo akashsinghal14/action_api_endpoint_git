@@ -1,0 +1,5 @@
+{
+  "schedule": "0 0 0 * * *",
+  "description": "Daily cache refresh at UTC midnight",
+  "arguments": "cache_refresh.ps1"
+}

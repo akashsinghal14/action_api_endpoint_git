@@ -1,0 +1,5 @@
+quart==0.20.0
+quart-cors==0.7.0
+aiohttp==3.9.1
+anthropic==0.40.0
+python-dotenv==1.0.0
