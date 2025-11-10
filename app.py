@@ -228,6 +228,63 @@ def get_category_for_measurement(measurement_type: str) -> str:
     
     return category_mapping.get(measurement_type, 'Firedoor Repair')
 
+def get_compliance_category(measurement_type: str, action_description: str = '') -> str:
+    """Get compliance category based on measurement type and action description
+    
+    NOTE: This is a FALLBACK function. The AI (OpenAI/Claude) is instructed to provide
+    complianceCategory in its response. This function is only used if the AI doesn't provide it.
+    
+    Returns one of the following UK fire door compliance categories:
+    - Building Regulations Part B: General fire safety requirements
+    - BS 476 / BS EN 1634: Fire resistance testing standards
+    - BS 8214: Fire door assembly code of practice
+    - BS 5499: Signage standards
+    - Regulatory Reform (Fire Safety) Order 2005: Legal requirements
+    - BS EN 13501: Fire classification standards
+    """
+    # Normalize measurement type
+    measurement_lower = measurement_type.lower()
+    action_lower = action_description.lower()
+    
+    # Signage-related issues -> BS 5499
+    if 'sign' in measurement_lower or 'signage' in action_lower:
+        return 'BS 5499'
+    
+    # Certification and testing -> Regulatory Reform (Fire Safety) Order 2005
+    if 'certification' in measurement_lower or 'certificate' in action_lower or 'testing' in action_lower or 'records' in action_lower:
+        return 'Regulatory Reform (Fire Safety) Order 2005'
+    
+    # Gap measurements (head, hinge, closing, threshold) -> BS 8214
+    if measurement_lower in ['head', 'hinge', 'closing', 'threshold'] or 'gap' in action_lower:
+        return 'BS 8214'
+    
+    # Door thickness, frame depth, door size -> BS 476 / BS EN 1634 (Fire resistance)
+    if measurement_lower in ['door_thickness', 'frame_depth', 'door_size'] or 'thickness' in action_lower or 'depth' in action_lower:
+        return 'BS 476 / BS EN 1634'
+    
+    # Intumescent strips and smoke seals -> BS 8214
+    if 'intumescent' in measurement_lower or 'smoke seal' in measurement_lower or 'intumescent' in action_lower or 'smoke seal' in action_lower:
+        return 'BS 8214'
+    
+    # Self-closing devices, hold open devices -> Building Regulations Part B
+    if 'self_closing' in measurement_lower or 'hold_open' in measurement_lower or 'self-closing' in action_lower or 'hold open' in action_lower:
+        return 'Building Regulations Part B'
+    
+    # Glazing and pyro glazing -> BS EN 13501 (Fire classification)
+    if 'glazing' in measurement_lower or 'glazing' in action_lower or 'glass' in action_lower:
+        return 'BS EN 13501'
+    
+    # Hinges and door close -> BS 8214
+    if 'hinge' in measurement_lower or 'door_close' in measurement_lower or 'hinge' in action_lower:
+        return 'BS 8214'
+    
+    # Door replacement -> BS 476 / BS EN 1634
+    if 'replacement' in action_lower or 'replace' in action_lower:
+        return 'BS 476 / BS EN 1634'
+    
+    # Default: BS 8214 (most common for fire door assemblies)
+    return 'BS 8214'
+
 def get_due_date(severity: str) -> str:
     if severity == 'critical':
         days = 0  # Today
@@ -420,6 +477,7 @@ Return JSON:
         {{
             "severity": "critical|high|medium|low",
             "category": "Firedoor Repair|Signage repair|Fire door Replacement|Testing, Records, Log Book|Door Replacement required|Door Repair",
+            "complianceCategory": "Building Regulations Part B|BS 476 / BS EN 1634|BS 8214|BS 5499|Regulatory Reform (Fire Safety) Order 2005|BS EN 13501",
             "dueDate": "DD/MM/YYYY",
             "actionDescription": "description",
             "remediationOptions": [
@@ -447,6 +505,25 @@ ANALYZE the action items and remediation options you provide, then choose the mo
 - If action involves updating records, testing → "Testing, Records, Log Book"
 - If action involves door replacement due to thickness → "Door Replacement required"
 - If action involves minor door repairs → "Door Repair"
+
+CRITICAL: For the "complianceCategory" field, you MUST analyze the action description and remediation options to determine which UK fire door compliance standard/regulation applies. Choose ONLY ONE from these 6 values:
+
+1. "Building Regulations Part B" - Use for general fire safety requirements, self-closing devices, hold-open devices, and operational fire safety measures required by UK Building Regulations.
+
+2. "BS 476 / BS EN 1634" - Use for fire resistance testing standards. Applies to door thickness, frame depth, door size measurements, and door replacement actions that relate to fire resistance performance.
+
+3. "BS 8214" - Use for fire door assembly code of practice. Applies to gap measurements (head, hinge, closing, threshold), intumescent strips, smoke seals, hinges, door closing mechanisms, and general fire door assembly components.
+
+4. "BS 5499" - Use for signage standards. Applies to keep shut signs, keep locked signs, and any signage-related compliance issues.
+
+5. "Regulatory Reform (Fire Safety) Order 2005" - Use for legal requirements related to certification visibility, testing documentation, records, log books, and administrative compliance obligations.
+
+6. "BS EN 13501" - Use for fire classification standards. Applies to glazing, pyro glazing, glass-related issues, and fire-rated glazing components.
+
+ANALYZE the specific action and remediation to determine the most appropriate compliance category. Consider:
+- What type of component or measurement is being addressed?
+- What UK standard or regulation specifically governs this requirement?
+- Which compliance framework would an inspector reference for this issue?
 
 For "confidenceScore", choose a value between 70-98 based on:
 - 90-98%: High confidence (well-established solutions, precise measurements, clear compliance requirements)
@@ -520,6 +597,7 @@ Return JSON:
         {{
             "severity": "critical|high|medium|low",
             "category": "Firedoor Repair|Signage repair|Fire door Replacement|Testing, Records, Log Book|Door Replacement required|Door Repair",
+            "complianceCategory": "Building Regulations Part B|BS 476 / BS EN 1634|BS 8214|BS 5499|Regulatory Reform (Fire Safety) Order 2005|BS EN 13501",
             "dueDate": "DD/MM/YYYY",
             "actionDescription": "description",
             "remediationOptions": [
@@ -547,6 +625,25 @@ ANALYZE the action items and remediation options you provide, then choose the mo
 - If action involves updating records, testing → "Testing, Records, Log Book"
 - If action involves door replacement due to thickness → "Door Replacement required"
 - If action involves minor door repairs → "Door Repair"
+
+CRITICAL: For the "complianceCategory" field, you MUST analyze the action description and remediation options to determine which UK fire door compliance standard/regulation applies. Choose ONLY ONE from these 6 values:
+
+1. "Building Regulations Part B" - Use for general fire safety requirements, self-closing devices, hold-open devices, and operational fire safety measures required by UK Building Regulations.
+
+2. "BS 476 / BS EN 1634" - Use for fire resistance testing standards. Applies to door thickness, frame depth, door size measurements, and door replacement actions that relate to fire resistance performance.
+
+3. "BS 8214" - Use for fire door assembly code of practice. Applies to gap measurements (head, hinge, closing, threshold), intumescent strips, smoke seals, hinges, door closing mechanisms, and general fire door assembly components.
+
+4. "BS 5499" - Use for signage standards. Applies to keep shut signs, keep locked signs, and any signage-related compliance issues.
+
+5. "Regulatory Reform (Fire Safety) Order 2005" - Use for legal requirements related to certification visibility, testing documentation, records, log books, and administrative compliance obligations.
+
+6. "BS EN 13501" - Use for fire classification standards. Applies to glazing, pyro glazing, glass-related issues, and fire-rated glazing components.
+
+ANALYZE the specific action and remediation to determine the most appropriate compliance category. Consider:
+- What type of component or measurement is being addressed?
+- What UK standard or regulation specifically governs this requirement?
+- Which compliance framework would an inspector reference for this issue?
 
 For "confidenceScore", choose a value between 70-98 based on:
 - 90-98%: High confidence (well-established solutions, precise measurements, clear compliance requirements)
@@ -613,6 +710,13 @@ def analyze_gap_with_ai(gap_type, value, unit, api_key, model, provider):
             
             print(f"OpenAI API response for {gap_type}: {ai_response[:100]}...")
             action_items = parse_openai_response(ai_response)
+            # AI should provide complianceCategory, but use fallback if missing
+            for item in action_items:
+                if 'complianceCategory' not in item or not item.get('complianceCategory'):
+                    # Fallback: Use hardcoded logic only if AI didn't provide complianceCategory
+                    action_desc = item.get('actionDescription', '')
+                    item['complianceCategory'] = get_compliance_category(gap_type, action_desc)
+                    print(f"  Fallback: Added complianceCategory using rule-based logic for {gap_type}")
             print(f"Parsed action items for {gap_type}: {len(action_items)} items")
             print(f"Cost for {gap_type}: ${cost} (Input: {input_tokens}, Output: {output_tokens})")
             
@@ -636,6 +740,13 @@ def analyze_gap_with_ai(gap_type, value, unit, api_key, model, provider):
             
             print(f"Claude API response for {gap_type}: {ai_response[:100]}...")
             action_items = parse_claude_response(ai_response)
+            # AI should provide complianceCategory, but use fallback if missing
+            for item in action_items:
+                if 'complianceCategory' not in item or not item.get('complianceCategory'):
+                    # Fallback: Use hardcoded logic only if AI didn't provide complianceCategory
+                    action_desc = item.get('actionDescription', '')
+                    item['complianceCategory'] = get_compliance_category(gap_type, action_desc)
+                    print(f"  Fallback: Added complianceCategory using rule-based logic for {gap_type}")
             print(f"Parsed action items for {gap_type}: {len(action_items)} items")
             print(f"Cost for {gap_type}: ${cost} (Input: {input_tokens}, Output: {output_tokens})")
 
@@ -904,6 +1015,7 @@ def handle_numeric_measurement_internal(gap_type, value, unit, api_key, model, a
                     {'option': 'Option 3: Comprehensive Fix', 'plan': f'Premium solution with professional testing.'},
                 ],
                 'confidenceScore': 98 if threshold_type == 'max_allowed' else 85,
+                'complianceCategory': get_compliance_category(gap_type, description),
             })
         
         result = {
@@ -963,6 +1075,7 @@ def handle_boolean_measurement_internal(measurement_type, value, api_key, model,
                         {'option': 'Option 3: Comprehensive Fix', 'plan': f'Complete {measurement_type.replace("_", " ")} installation with testing.'},
                     ],
                     'confidenceScore': 98 if default_severity == 'critical' else (95 if default_severity == 'high' else 85),
+                    'complianceCategory': get_compliance_category(measurement_type, description),
                 })
         
         return {
@@ -1024,17 +1137,19 @@ def slim_head(value=None, unit=None):
 
         action_items = []
         if not is_compliant:
+            description = f'Head gap ({value}mm) exceeds maximum allowed ({max_gap}mm).'
             action_items.append({
                 'severity': 'critical',
                 'category': get_category_for_measurement('head'),
                 'dueDate': get_due_date('critical'),
-                'actionDescription': f'Head gap ({value}mm) exceeds maximum allowed ({max_gap}mm).',
+                'actionDescription': description,
                 'remediationOptions': [
                     {'option': 'Option 1: Quick Fix - Basic Strips', 'plan': 'Install basic intumescent strips at the head.'},
                     {'option': 'Option 2: Standard Solution - Quality Strips', 'plan': 'Install high-quality strips; adjust alignment if needed.'},
                     {'option': 'Option 3: Comprehensive Fix', 'plan': 'Premium strips with smoke seals and full alignment.'},
                 ],
                 'confidenceScore': 92,
+                'complianceCategory': get_compliance_category('head', description),
             })
 
         return jsonify({
@@ -1187,6 +1302,7 @@ def handle_numeric_measurement_unified(gap_type, value, unit, api_key, model, ai
                     {'option': 'Option 3: Comprehensive Fix', 'plan': f'Premium solution with professional testing.'},
                 ],
                 'confidenceScore': 98 if threshold_type == 'max_allowed' else 85,
+                'complianceCategory': get_compliance_category(gap_type, description),
             })
         
         result = {
@@ -1248,6 +1364,7 @@ def handle_boolean_measurement_unified(measurement_type, value, api_key, model, 
                         {'option': 'Option 3: Comprehensive Fix', 'plan': f'Complete {measurement_type.replace("_", " ")} installation with testing.'},
                     ],
                     'confidenceScore': 98 if default_severity == 'critical' else (95 if default_severity == 'high' else 85),
+                    'complianceCategory': get_compliance_category(measurement_type, description),
                 })
         
         # Use original measurement type for response if provided, otherwise use internal name
