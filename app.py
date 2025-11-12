@@ -1386,7 +1386,10 @@ def handle_boolean_measurement_unified(measurement_type, value, api_key, model, 
         return jsonify({'error': f'{measurement_type} analysis failed: {str(e)}'}), 500
 
 def analyze_image_compliance(image_data: bytes, api_key: str, model: str = 'gpt-4o'):
-    """Analyze door image for compliance using OpenAI Vision API"""
+    """Analyze door image for compliance using OpenAI Vision API
+    
+    Comprehensive analysis covering 11 fire door compliance categories from main2.py
+    """
     try:
         # Encode image to base64
         image_base64 = base64.b64encode(image_data).decode('utf-8')
@@ -1403,57 +1406,109 @@ def analyze_image_compliance(image_data: bytes, api_key: str, model: str = 'gpt-
             image_format = 'jpeg'
         # Default to jpeg if format not detected
         
-        # Create the vision prompt
-        vision_prompt = """You are a UK fire safety expert analyzing a fire door image. 
+        # Comprehensive vision prompt from main2.py
+        vision_prompt = """
+You are a fire safety compliance inspector specializing in UK property regulations. Analyze the attached image of a fire door and assess its compliance based on the following criteria:
 
-Analyze this image and check for the following 4 components:
-1. Hinge - Check if door hinges are present and properly installed
-2. Glazing - Check if any glazing (glass) is present in the door
-3. Intumescent Strips - Check if intumescent strips are visible around the door edges
-4. Handles - Check if door handles/levers are present and functional
+⚠️ IMPORTANT: You must return a complete JSON object with **all 11 categories**, even if some features are not visible or cannot be verified. Do not omit any category.
 
-For each component, determine:
-- Is it visible/detectable in the image?
-- Is it present/installed?
-- Is it compliant? (Present and properly installed = compliant)
+For each of the following categories, return:
+- `"compliance_status"`: true if the feature is visibly present and appears compliant, false if missing or non-compliant.
 
-Return your analysis in JSON format:
+Categories to assess:
+1. 🔖 Keep Shut Sign
+2. 🚪 Self-Closing Device
+3. 🔥 Intumescent Strips
+4. 🧲 Hold Open Device
+5. 📜 Certification Visible
+6. 🪟 Contains Glazing
+7. 🔥 Pyro Glazing
+8. 📏 Gap Measurements
+9. 🔩 Hinge Condition
+10. 🧱 Frame Integrity
+11. 🚨 Door Damage Check
+
+1. 🔖 Keep Shut Sign:
+   - Is there a clearly visible 'Fire Door Keep Shut' sign?
+   - Is the signage positioned correctly and legible?
+
+2. 🚪 Self-Closing Device:
+   - Is a self-closing device present?
+   - Does it appear functional and properly installed?
+
+3. 🔥 Intumescent Strips:
+   - Are intumescent strips visible around the door edge or frame?
+   - Do they appear continuous and properly installed?
+
+4. 🧲 Hold Open Device:
+   - Is there a hold-open device present? This may include:
+     - Wall-mounted electromagnetic holders
+     - Overhead arms or brackets that prevent the door from closing
+     - Floor-mounted or frame-mounted mechanical devices
+   - If visible, does it appear to comply with fire safety standards (e.g., automatic release on alarm)?
+   - If the image shows a device mounted above or beside the door that holds it open, assume it is a hold-open device unless clearly non-compliant.
+   - If no hold-open device is visible, mark `"compliance_status": false` and `"details": "Not visible in image"`.
+
+5. 📜 Certification Visible:
+   - Is there a certification label or plate visible on the door or frame?
+   - Is it legible and from a recognized authority?
+
+6. 🪟 Contains Glazing:
+   - Does the door contain any glazing (glass panels)?
+   - Is the glazing properly sealed and positioned?
+   - Set compliance_status: true only if glazing is present, properly sealed, and there are no signs of damage.
+
+7. 🔥 Pyro Glazing:
+   - If glazing is present, does it appear to be pyro glazing (fire-rated)?
+   - Are there markings or visual indicators of fire resistance?
+
+8. 📏 Gap Measurements:
+   - Estimate the gaps around the door edges (top, sides, bottom).
+   - Are they within the acceptable range (typically 2–4mm)?
+
+9. 🔩 Hinge Condition:
+   - Are there at least three hinges?
+   - Are they secure, undamaged, and free of visible wear?
+
+10. 🧱 Frame Integrity:
+   - Is the door frame robust and undamaged?
+   - Are there signs of warping, cracks, or poor installation?
+
+11. 🚨 Door Damage Check:
+- Always include this category.
+- Carefully inspect the fire door and all its components for **visible physical damage only**.
+- This includes:
+  - 🔖 Keep Shut Sign: faded, illegible, cracked, or physically damaged signage
+  - 🚪 Self-Closing Device: broken, bent, or visibly malfunctioning closer
+  - 🔥 Intumescent Strips: degraded, torn, or improperly installed strips
+  - 🪟 Glazing: cracked, shattered, broken, or missing glass panels — this is considered serious door damage
+  - 🔥 Pyro Glazing: damaged fire-rated glass or broken markings
+  - 📏 Gap Measurements: uneven, excessive gaps that indicate warping  
+    📏 Gap Measurements: Only include in `"Door Damage Check"` if gaps are visibly uneven **and clearly indicate structural warping or distortion**. Do not report diagnostic observations (e.g. "may indicate warping") unless physical damage is confirmed.
+  - 🔩 Hinge Condition: bent, loose, rusted, or broken hinges
+  - 🧱 Frame Integrity: cracked, split, warped, or poorly fitted frame
+
+- Do **not** include components that are simply missing or not visible — only report actual damage.
+- If **any** of these components show visible damage, set `"door_damaged": true`.
+- If **all** components are intact and undamaged, set `"door_damaged": false`.
+- You must explicitly mention glazing damage in the `details` field if broken glass is visible. 
+- If Door is not Damaged Compliance Status should be true else false
+
+Return your findings in the following JSON format:
 {
-    "components": {
-        "hinge": {
-            "visible": true/false,
-            "present": true/false,
-            "compliant": true/false,
-            "description": "one-line description of what you see"
-        },
-        "glazing": {
-            "visible": true/false,
-            "present": true/false,
-            "compliant": true/false,
-            "description": "one-line description of what you see"
-        },
-        "intumescent_strips": {
-            "visible": true/false,
-            "present": true/false,
-            "compliant": true/false,
-            "description": "one-line description of what you see"
-        },
-        "handles": {
-            "visible": true/false,
-            "present": true/false,
-            "compliant": true/false,
-            "description": "one-line description of what you see"
-        }
-    },
-    "overall_compliance": true/false,
-    "analysis_summary": "brief overall summary"
+  "compliance_status": true | false, // Overall compliance status
+  "door_damaged": true | false,
+  "issues_found": [
+    {
+      "category": "Keep Shut Sign" | "Self-Closing Device" | "Intumescent Strips" | "Hold Open Device" | "Certification Visible" | "Contains Glazing" | "Pyro Glazing" | "Gaps" | "Hinges" | "Frame" | "Door Damage Check",
+      "compliance_status": true | false,
+      "details": "Brief explanation of what was observed"
+    }
+  ],
+  "overall_comments": "Summary of the inspection and any recommendations"
 }
 
-IMPORTANT RULES:
-- If a component is NOT visible in the image, set visible=false, present=false, compliant=false and description should mention "not visible"
-- If visible but not present/installed, set visible=true, present=false, compliant=false
-- If visible and present, set visible=true, present=true, compliant=true
-- overall_compliance should be true only if ALL visible components are compliant. If any component is not visible, set overall_compliance to false."""
+Only include observations based on visible evidence in the image. Do not speculate beyond what is shown."""
 
         # Rate limiting check
         if not rate_limiter.can_make_call():
@@ -1477,7 +1532,7 @@ IMPORTANT RULES:
                     ]
                 }
             ],
-            max_tokens=1000,
+            max_tokens=2000,  # Increased for comprehensive analysis
             temperature=0.3
         )
         
@@ -1499,37 +1554,89 @@ IMPORTANT RULES:
         
         parsed_response = json.loads(json_match.group(0))
         
-        # Validate and process response
-        if 'components' not in parsed_response or 'overall_compliance' not in parsed_response:
-            raise ValueError('Invalid response format from AI')
-        
-        # Build compliance status
-        compliance_status = parsed_response.get('overall_compliance', False)
-        
-        # Extract component details
-        components = parsed_response.get('components', {})
-        component_breakdown = {}
-        for component_name in ['hinge', 'glazing', 'intumescent_strips', 'handles']:
-            comp_data = components.get(component_name, {})
-            component_breakdown[component_name] = {
-                'visible': comp_data.get('visible', False),
-                'present': comp_data.get('present', False),
-                'compliant': comp_data.get('compliant', False),
-                'description': comp_data.get('description', 'Not analyzed')
+        # Handle new format from main2.py with issues_found array
+        if 'issues_found' in parsed_response:
+            compliance_status = parsed_response.get('compliance_status', False)
+            door_damaged = parsed_response.get('door_damaged', False)
+            issues_found = parsed_response.get('issues_found', [])
+            overall_comments = parsed_response.get('overall_comments', '')
+            
+            # Map category names from main2.py to component keys
+            category_mapping = {
+                'Keep Shut Sign': 'keep_shut_sign',
+                'Self-Closing Device': 'self_closing_device',
+                'Intumescent Strips': 'intumescent_strips',
+                'Hold Open Device': 'hold_open_device',
+                'Certification Visible': 'certification_visible',
+                'Contains Glazing': 'contains_glazing',
+                'Pyro Glazing': 'pyro_glazing',
+                'Gaps': 'gap_measurements',
+                'Hinges': 'hinge_condition',
+                'Frame': 'frame_integrity',
+                'Door Damage Check': 'door_damage_check'
             }
-        
-        result = {
-            'success': True,
-            'compliance_status': compliance_status,
-            'components': component_breakdown,
-            'analysis_summary': parsed_response.get('analysis_summary', ''),
-            'timestamp': datetime.now().isoformat(),
-            'ai_model': model,
-            'tokens_used': total_tokens,
-            'input_tokens': input_tokens,
-            'output_tokens': output_tokens,
-            'cost_usd': cost
-        }
+            
+            # Transform issues_found array into components format
+            component_breakdown = {}
+            for issue in issues_found:
+                category_name = issue.get('category', '')
+                component_key = category_mapping.get(category_name, category_name.lower().replace(' ', '_'))
+                
+                # Performance optimization: Only include compliant status
+                # Removed: visible, present, description (can be re-enabled later)
+                component_breakdown[component_key] = {
+                    'compliant': issue.get('compliance_status', False),
+                    # 'visible': is_visible,  # Commented out for performance
+                    # 'present': is_present,  # Commented out for performance
+                    # 'description': issue.get('details', 'Not analyzed')  # Commented out for performance
+                }
+            
+            # Build result in app_both.py format
+            result = {
+                'success': True,
+                'compliance_status': compliance_status,
+                'door_damaged': door_damaged,  # Additional field from main2.py
+                'components': component_breakdown,
+                # 'analysis_summary': overall_comments,  # Commented out for performance
+                'timestamp': datetime.now().isoformat(),
+                'ai_model': model,
+                'tokens_used': total_tokens,
+                'input_tokens': input_tokens,
+                'output_tokens': output_tokens,
+                'cost_usd': cost
+            }
+        # Handle old format (backward compatibility)
+        elif 'components' in parsed_response:
+            compliance_status = parsed_response.get('overall_compliance', False)
+            
+            # Extract component details
+            components = parsed_response.get('components', {})
+            component_breakdown = {}
+            for component_name in ['hinge', 'glazing', 'intumescent_strips', 'handles']:
+                comp_data = components.get(component_name, {})
+                # Performance optimization: Only include compliant status
+                # Removed: visible, present, description (can be re-enabled later)
+                component_breakdown[component_name] = {
+                    'compliant': comp_data.get('compliant', False),
+                    # 'visible': comp_data.get('visible', False),  # Commented out for performance
+                    # 'present': comp_data.get('present', False),  # Commented out for performance
+                    # 'description': comp_data.get('description', 'Not analyzed')  # Commented out for performance
+                }
+            
+            result = {
+                'success': True,
+                'compliance_status': compliance_status,
+                'components': component_breakdown,
+                # 'analysis_summary': parsed_response.get('analysis_summary', ''),  # Commented out for performance
+                'timestamp': datetime.now().isoformat(),
+                'ai_model': model,
+                'tokens_used': total_tokens,
+                'input_tokens': input_tokens,
+                'output_tokens': output_tokens,
+                'cost_usd': cost
+            }
+        else:
+            raise ValueError('Invalid response format from AI - missing required fields')
         
         return result
         
