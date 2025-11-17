@@ -282,8 +282,62 @@ def get_compliance_category(measurement_type: str, action_description: str = '')
     if 'replacement' in action_lower or 'replace' in action_lower:
         return 'BS 476 / BS EN 1634'
     
+    # Door damage and visual defects -> BS 8214 (door assembly integrity)
+    if 'door_damage' in measurement_lower or 'visual_defect' in measurement_lower or 'damage' in action_lower:
+        return 'BS 8214'
+    
+    # Full doorset size and number of hinges -> BS 8214
+    if 'full_doorset_size' in measurement_lower or 'no_of_hinges' in measurement_lower:
+        return 'BS 8214'
+    
     # Default: BS 8214 (most common for fire door assemblies)
     return 'BS 8214'
+
+def get_compliance_category_description(compliance_category: str) -> str:
+    """Get description for compliance category"""
+    descriptions = {
+        'Building Regulations Part B': 'General fire safety requirements, self-closing devices, hold-open devices, and operational fire safety measures required by UK Building Regulations.',
+        'BS 476 / BS EN 1634': 'Fire resistance testing standards. Applies to door thickness, frame depth, door size measurements, and door replacement actions that relate to fire resistance performance.',
+        'BS 8214': 'Fire door assembly code of practice. Applies to gap measurements (head, hinge, closing, threshold), intumescent strips, smoke seals, hinges, door closing mechanisms, and general fire door assembly components.',
+        'BS 5499': 'Signage standards. Applies to keep shut signs, keep locked signs, and any signage-related compliance issues.',
+        'Regulatory Reform (Fire Safety) Order 2005': 'Legal requirements related to certification visibility, testing documentation, records, log books, and administrative compliance obligations.',
+        'BS EN 13501': 'Fire classification standards. Applies to glazing, pyro glazing, glass-related issues, and fire-rated glazing components.'
+    }
+    return descriptions.get(compliance_category, 'UK fire door compliance standard.')
+
+def map_compliance_check_to_measurement_type(compliance_check_name: str) -> str:
+    """Map compliance check name to internal measurement type"""
+    check_lower = compliance_check_name.lower()
+    
+    # Map compliance check names to measurement types
+    if 'damage' in check_lower and 'door' in check_lower:
+        return 'door_damage'
+    elif 'visual defect' in check_lower:
+        return 'visual_defects'
+    elif 'hinge' in check_lower and 'fire rated' in check_lower:
+        return 'hinges_fire_rated'
+    elif 'cold smoke seal' in check_lower:
+        return 'cold_smoke_seals'
+    elif 'intumescent strip' in check_lower:
+        return 'intumescent_strips'
+    elif 'door close fully' in check_lower or 'close fully' in check_lower:
+        return 'door_close_fully'
+    elif 'glazing' in check_lower and 'contain' in check_lower:
+        return 'glazing'
+    elif 'keep locked sign' in check_lower:
+        return 'keep_locked_sign'
+    elif 'keep shut sign' in check_lower:
+        return 'keep_shut_sign'
+    elif 'certification visible' in check_lower:
+        return 'certification_visible'
+    elif 'pyro glazing' in check_lower:
+        return 'pyro_glazing'
+    elif 'hold open device' in check_lower:
+        return 'hold_open_device'
+    elif 'self closing device' in check_lower or 'self-closing' in check_lower:
+        return 'self_closing_device'
+    else:
+        return 'unknown'
 
 def get_due_date(severity: str) -> str:
     if severity == 'critical':
@@ -967,10 +1021,125 @@ def warm_cache_automatically():
             print(f"    ❌ Error: {str(e)[:50]}...")
             failed_warms += 1
     
+    # Warm batch cache for measurements and compliance checks
+    print("\n🔥 Warming batch cache for measurements and compliance checks...")
+    batch_successful = 0
+    batch_failed = 0
+    
+    # All measurement types for batch cache
+    batch_measurement_types = [
+        'Head', 'Hinge', 'Closing', 'Threshold', 
+        'DoorThickness', 'FrameDepth', 'DoorSize', 
+        'FullDoorsetSize', 'NoOfHinges'
+    ]
+    
+    # All compliance check names
+    batch_compliance_checks = [
+        'Any damage to the door?',
+        'Any Visual defects on the door?',
+        'Are all hinges fire rated?',
+        'Are there cold smoke seals?',
+        'Are there intumescent strips?',
+        'Does the door close fully?',
+        'Does the door contain glazing?',
+        'Fire door Keep Locked sign?',
+        'Fire door Keep Shut sign?',
+        'Is certification visible on fire door?',
+        'Is glazing pyro glazing?',
+        'Is there a hold open device?',
+        'Self closing device?'
+    ]
+    
+    # Get API key for batch warming (use OpenAI)
+    batch_api_key = resolve_api_key('openai_key', 'openai')
+    if not batch_api_key:
+        print("  ⚠️  No OpenAI API key available for batch cache warming, skipping...")
+    else:
+        batch_model = DEFAULT_OPENAI_MODEL
+        
+        # Warm measurements cache (one at a time to avoid rate limits)
+        measurement_mapping = {
+            'Head': ('head', 4, 'max_allowed'),
+            'Hinge': ('hinge', 4, 'max_allowed'),
+            'Closing': ('closing', 4, 'max_allowed'),
+            'Threshold': ('threshold', 4, 'max_allowed'),
+            'DoorThickness': ('door_thickness', 44, 'min_required'),
+            'FrameDepth': ('frame_depth', 100, 'min_required'),
+            'DoorSize': ('door_size', 500, 'min_required'),
+            'FullDoorsetSize': ('full_doorset_size', 500, 'min_required'),
+            'NoOfHinges': ('no_of_hinges', 3, 'min_required')
+        }
+        
+        for i, measurement_name in enumerate(batch_measurement_types):
+            try:
+                measurement_type, threshold, threshold_type = measurement_mapping[measurement_name]
+                
+                # Use a non-compliant value (doesn't matter what value, just needs to be non-compliant)
+                if threshold_type == 'max_allowed':
+                    test_value = threshold + 1  # Non-compliant
+                else:
+                    test_value = threshold - 1  # Non-compliant
+                
+                print(f"  Warming batch measurement {i+1}/{len(batch_measurement_types)}: {measurement_name}")
+                
+                measurements_list = [{
+                    'measurementName': measurement_name,
+                    'value': test_value,
+                    'threshold': threshold,
+                    'thresholdType': threshold_type
+                }]
+                
+                result = analyze_batch_with_ai(measurements_list, [], batch_api_key, batch_model)
+                
+                if result and result.get('measurements'):
+                    print(f"    ✅ Cached: {measurement_name}")
+                    batch_successful += 1
+                else:
+                    print(f"    ❌ Failed to cache: {measurement_name}")
+                    batch_failed += 1
+                
+                # Small delay to avoid rate limits
+                time.sleep(0.5)
+                
+            except Exception as e:
+                print(f"    ❌ Error warming {measurement_name}: {str(e)[:50]}...")
+                batch_failed += 1
+        
+        # Warm compliance checks cache (one at a time)
+        for i, check_name in enumerate(batch_compliance_checks):
+            try:
+                print(f"  Warming batch compliance check {i+1}/{len(batch_compliance_checks)}: {check_name}")
+                
+                compliance_checks_list = [{
+                    'ComplianceCheckName': check_name,
+                    'NonCompliantCount': 1  # Value doesn't matter, just needs to be > 0
+                }]
+                
+                result = analyze_batch_with_ai([], compliance_checks_list, batch_api_key, batch_model)
+                
+                if result and result.get('complianceChecks'):
+                    print(f"    ✅ Cached: {check_name}")
+                    batch_successful += 1
+                else:
+                    print(f"    ❌ Failed to cache: {check_name}")
+                    batch_failed += 1
+                
+                # Small delay to avoid rate limits
+                time.sleep(0.5)
+                
+            except Exception as e:
+                print(f"    ❌ Error warming {check_name}: {str(e)[:50]}...")
+                batch_failed += 1
+    
     print(f"\n📊 Auto Cache Warming Results:")
     print(f"  ✅ Successful: {successful_warms}")
     print(f"  ❌ Failed: {failed_warms}")
     print(f"  🎯 Success rate: {(successful_warms/(successful_warms+failed_warms)*100):.1f}%")
+    if batch_api_key:
+        print(f"\n📊 Batch Cache Warming Results:")
+        print(f"  ✅ Successful: {batch_successful}")
+        print(f"  ❌ Failed: {batch_failed}")
+        print(f"  🎯 Success rate: {(batch_successful/(batch_successful+batch_failed)*100):.1f}%")
     print("🔥 Cache warming complete!")
 
 def handle_numeric_measurement_internal(gap_type, value, unit, api_key, model, ai_provider, threshold, threshold_type):
@@ -1259,6 +1428,400 @@ def analyze_measurement():
         
     except Exception as e:
         return jsonify({'error': f'Analysis failed: {str(e)}'}), 500
+
+def create_batch_prompt(measurements_list, compliance_checks_list):
+    """Create prompt for batch analysis with OpenAI"""
+    prompt_parts = []
+    
+    # Add measurements section
+    if measurements_list:
+        prompt_parts.append("NON-COMPLIANT MEASUREMENTS:")
+        for m in measurements_list:
+            prompt_parts.append(f"- {m['measurementName']}: {m['value']}mm (Threshold: {m['threshold']}mm, Type: {m['thresholdType']})")
+        prompt_parts.append("")
+    
+    # Add compliance checks section
+    if compliance_checks_list:
+        prompt_parts.append("NON-COMPLIANT COMPLIANCE CHECKS:")
+        for c in compliance_checks_list:
+            prompt_parts.append(f"- {c['ComplianceCheckName']}: {c['NonCompliantCount']} non-compliant items")
+        prompt_parts.append("")
+    
+    data_text = "\n".join(prompt_parts)
+    
+    return f"""You are a UK fire safety compliance expert. Analyze the following non-compliant fire door measurements and compliance checks.
+
+For each item, determine the appropriate UK fire door compliance category and provide a description.
+
+{data_text}
+
+Return a JSON object with the following structure:
+{{
+    "measurements": [
+        {{
+            "measurementName": "Head",
+            "complianceCategory": "Building Regulations Part B|BS 476 / BS EN 1634|BS 8214|BS 5499|Regulatory Reform (Fire Safety) Order 2005|BS EN 13501",
+            "complianceCategoryDescription": "Detailed description of what this compliance category covers and why it applies to this measurement"
+        }}
+    ],
+    "complianceChecks": [
+        {{
+            "ComplianceCheckName": "Any damage to the door?",
+            "complianceCategory": "Building Regulations Part B|BS 476 / BS EN 1634|BS 8214|BS 5499|Regulatory Reform (Fire Safety) Order 2005|BS EN 13501",
+            "complianceCategoryDescription": "Detailed description of what this compliance category covers and why it applies to this compliance check"
+        }}
+    ]
+}}
+
+CRITICAL: For the "complianceCategory" field, you MUST choose ONLY ONE from these 6 values:
+
+1. "Building Regulations Part B" - Use for general fire safety requirements, self-closing devices, hold-open devices, and operational fire safety measures required by UK Building Regulations.
+
+2. "BS 476 / BS EN 1634" - Use for fire resistance testing standards. Applies to door thickness, frame depth, door size measurements, and door replacement actions that relate to fire resistance performance.
+
+3. "BS 8214" - Use for fire door assembly code of practice. Applies to gap measurements (head, hinge, closing, threshold), intumescent strips, smoke seals, hinges, door closing mechanisms, and general fire door assembly components.
+
+4. "BS 5499" - Use for signage standards. Applies to keep shut signs, keep locked signs, and any signage-related compliance issues.
+
+5. "Regulatory Reform (Fire Safety) Order 2005" - Use for legal requirements related to certification visibility, testing documentation, records, log books, and administrative compliance obligations.
+
+6. "BS EN 13501" - Use for fire classification standards. Applies to glazing, pyro glazing, glass-related issues, and fire-rated glazing components.
+
+For "complianceCategoryDescription", provide a clear, detailed explanation (2-3 sentences) that:
+- Explains what the compliance category/standard covers
+- Explains why it specifically applies to this measurement or compliance check
+- Helps users understand the regulatory context
+
+ANALYZE each item carefully and determine the most appropriate compliance category based on:
+- What type of component or measurement is being addressed?
+- What UK standard or regulation specifically governs this requirement?
+- Which compliance framework would an inspector reference for this issue?
+
+Return ONLY valid JSON, no additional text."""
+
+def analyze_batch_with_ai(measurements_list, compliance_checks_list, api_key, model):
+    """Analyze batch measurements and compliance checks with OpenAI API - with caching"""
+    try:
+        # Check cache for each item first
+        cached_measurements = {}
+        uncached_measurements = []
+        
+        for m in measurements_list:
+            cache_key = f"batch:measurement:{m['measurementName']}"
+            if ENABLE_CACHING:
+                cached = cache.get(cache_key)
+                if cached:
+                    cached_measurements[m['measurementName']] = cached
+                    print(f"Cache HIT for measurement: {m['measurementName']}")
+                    continue
+            uncached_measurements.append(m)
+        
+        cached_checks = {}
+        uncached_checks = []
+        
+        for c in compliance_checks_list:
+            cache_key = f"batch:compliance:{c['ComplianceCheckName']}"
+            if ENABLE_CACHING:
+                cached = cache.get(cache_key)
+                if cached:
+                    cached_checks[c['ComplianceCheckName']] = cached
+                    print(f"Cache HIT for compliance check: {c['ComplianceCheckName']}")
+                    continue
+            uncached_checks.append(c)
+        
+        # If all items are cached, return cached results
+        if not uncached_measurements and not uncached_checks:
+            print("All items found in cache, returning cached results")
+            result = {
+                'measurements': [cached_measurements[name] for name in [m['measurementName'] for m in measurements_list]],
+                'complianceChecks': [cached_checks[name] for name in [c['ComplianceCheckName'] for c in compliance_checks_list]],
+                'tokens_used': 0,
+                'input_tokens': 0,
+                'output_tokens': 0,
+                'cost_usd': 0
+            }
+            return result
+        
+        # Only call API for uncached items
+        if uncached_measurements or uncached_checks:
+            print(f"Cache MISS: {len(uncached_measurements)} measurements, {len(uncached_checks)} compliance checks - calling OpenAI API")
+            
+            # Create prompt only for uncached items
+            prompt = create_batch_prompt(uncached_measurements, uncached_checks)
+            
+            # Rate limiting check
+            if not rate_limiter.can_make_call():
+                raise Exception('Rate limit exceeded')
+            
+            # Call OpenAI API
+            client = openai.OpenAI(api_key=api_key)
+            response = client.chat.completions.create(
+                model=model,
+                messages=[
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=2000,  # Increased for batch processing
+                temperature=0.3
+            )
+            
+            ai_response = response.choices[0].message.content
+            input_tokens = response.usage.prompt_tokens
+            output_tokens = response.usage.completion_tokens
+            total_tokens = response.usage.total_tokens
+            cost = calculate_openai_cost(model, input_tokens, output_tokens)
+            
+            print(f"OpenAI Batch API response: {ai_response[:200]}...")
+            print(f"Cost: ${cost} (Input: {input_tokens}, Output: {output_tokens})")
+            
+            # Parse JSON response
+            json_pattern = re.compile(r'\{[\s\S]*\}')
+            json_match = json_pattern.search(ai_response)
+            
+            if not json_match:
+                raise ValueError('No JSON found in AI response')
+            
+            parsed_response = json.loads(json_match.group(0))
+            
+            # Validate response structure
+            if 'measurements' not in parsed_response and 'complianceChecks' not in parsed_response:
+                raise ValueError('Invalid response format - missing measurements or complianceChecks')
+            
+            # Cache the new results
+            if ENABLE_CACHING:
+                for m in parsed_response.get('measurements', []):
+                    cache_key = f"batch:measurement:{m['measurementName']}"
+                    cache.set(cache_key, m)
+                    print(f"Cached measurement: {m['measurementName']}")
+                
+                for c in parsed_response.get('complianceChecks', []):
+                    cache_key = f"batch:compliance:{c['ComplianceCheckName']}"
+                    cache.set(cache_key, c)
+                    print(f"Cached compliance check: {c['ComplianceCheckName']}")
+            
+            # Merge cached and new results
+            all_measurements = {}
+            all_checks = {}
+            
+            # Add cached measurements
+            for name, data in cached_measurements.items():
+                all_measurements[name] = data
+            
+            # Add new measurements from API
+            for m in parsed_response.get('measurements', []):
+                all_measurements[m['measurementName']] = m
+            
+            # Add cached checks
+            for name, data in cached_checks.items():
+                all_checks[name] = data
+            
+            # Add new checks from API
+            for c in parsed_response.get('complianceChecks', []):
+                all_checks[c['ComplianceCheckName']] = c
+            
+            # Build final result in original order
+            final_measurements = []
+            for m in measurements_list:
+                if m['measurementName'] in all_measurements:
+                    final_measurements.append(all_measurements[m['measurementName']])
+            
+            final_checks = []
+            for c in compliance_checks_list:
+                if c['ComplianceCheckName'] in all_checks:
+                    final_checks.append(all_checks[c['ComplianceCheckName']])
+            
+            result = {
+                'measurements': final_measurements,
+                'complianceChecks': final_checks,
+                'tokens_used': total_tokens,
+                'input_tokens': input_tokens,
+                'output_tokens': output_tokens,
+                'cost_usd': cost
+            }
+            
+            return result
+        else:
+            # All cached (shouldn't reach here, but just in case)
+            result = {
+                'measurements': [cached_measurements[name] for name in [m['measurementName'] for m in measurements_list]],
+                'complianceChecks': [cached_checks[name] for name in [c['ComplianceCheckName'] for c in compliance_checks_list]],
+                'tokens_used': 0,
+                'input_tokens': 0,
+                'output_tokens': 0,
+                'cost_usd': 0
+            }
+            return result
+        
+    except Exception as e:
+        print(f"Error in analyze_batch_with_ai: {e}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
+        return None
+
+@app.route('/api/action_item/batch', methods=['POST'])
+def analyze_batch_measurements():
+    """Batch endpoint for processing measurements and compliance checks with complianceCategory and complianceCategoryDescription
+    
+    Accepts:
+    - measurements: Dict with numeric measurements (Head, Hinge, Closing, Threshold, DoorThickness, FrameDepth, DoorSize, FullDoorsetSize, NoOfHinges)
+    - complianceChecks: Array of compliance check objects with ComplianceCheckName and NonCompliantCount
+    - api_key: OpenAI API key (required)
+    - model: OpenAI model name (optional, defaults to DEFAULT_OPENAI_MODEL)
+    
+    Returns:
+    - measurements: Array of processed measurements with complianceCategory and complianceCategoryDescription
+    - complianceChecks: Array of processed compliance checks with complianceCategory and complianceCategoryDescription
+    """
+    try:
+        data = request.get_json() or {}
+        
+        if not data:
+            return jsonify({'error': 'JSON data required'}), 400
+        
+        # Accept measurements - can be at top level or nested under 'measurements'
+        if 'measurements' in data:
+            measurements = data.get('measurements', {})
+        else:
+            # Check if top-level keys match measurement names
+            measurement_keys = ['Head', 'Hinge', 'Closing', 'Threshold', 'DoorThickness', 'FrameDepth', 'DoorSize', 'FullDoorsetSize', 'NoOfHinges']
+            measurements = {k: v for k, v in data.items() if k in measurement_keys and k != 'complianceChecks'}
+        
+        # Accept complianceChecks - can be nested under 'complianceChecks' or at top level as array
+        compliance_checks = data.get('complianceChecks', [])
+        if not compliance_checks:
+            # If no complianceChecks key, check if data itself is an array (for backward compatibility)
+            if isinstance(data, list):
+                compliance_checks = data
+        
+        if not measurements and not compliance_checks:
+            return jsonify({'error': 'Either measurements or complianceChecks must be provided'}), 400
+        
+        # Extract API key and model
+        api_key_param = data.get('api_key')
+        model = data.get('model') or DEFAULT_OPENAI_MODEL
+        
+        # Validate API key is provided
+        if not api_key_param:
+            return jsonify({'error': 'api_key is required'}), 400
+        
+        # Resolve API key
+        real_key = resolve_api_key(api_key_param, 'openai')
+        if not real_key:
+            return jsonify({'error': 'Invalid OpenAI API key'}), 400
+        
+        # Prepare measurements list for AI (only non-compliant)
+        measurement_mapping = {
+            'Head': ('head', 4, 'max_allowed'),
+            'Hinge': ('hinge', 4, 'max_allowed'),
+            'Closing': ('closing', 4, 'max_allowed'),
+            'Threshold': ('threshold', 4, 'max_allowed'),
+            'DoorThickness': ('door_thickness', 44, 'min_required'),
+            'FrameDepth': ('frame_depth', 100, 'min_required'),
+            'DoorSize': ('door_size', 500, 'min_required'),
+            'FullDoorsetSize': ('full_doorset_size', 500, 'min_required'),
+            'NoOfHinges': ('no_of_hinges', 3, 'min_required')
+        }
+        
+        measurements_list = []
+        for measurement_name, value in measurements.items():
+            if value is None or value == 0:
+                continue  # Skip zero or null values
+                
+            if measurement_name not in measurement_mapping:
+                continue  # Skip unknown measurements
+            
+            measurement_type, threshold, threshold_type = measurement_mapping[measurement_name]
+            
+            # Determine compliance
+            if threshold_type == 'max_allowed':
+                is_compliant = value <= threshold
+            else:  # min_required
+                is_compliant = value >= threshold
+            
+            # Only process non-compliant measurements
+            if not is_compliant:
+                measurements_list.append({
+                    'measurementName': measurement_name,
+                    'value': value,
+                    'threshold': threshold,
+                    'thresholdType': threshold_type
+                })
+        
+        # Prepare compliance checks list for AI (only non-compliant)
+        compliance_checks_list = []
+        for check in compliance_checks:
+            compliance_check_name = check.get('ComplianceCheckName', '')
+            non_compliant_count = check.get('NonCompliantCount', 0)
+            
+            if not compliance_check_name or non_compliant_count == 0:
+                continue  # Skip if no name or no non-compliant items
+            
+            compliance_checks_list.append({
+                'ComplianceCheckName': compliance_check_name,
+                'NonCompliantCount': non_compliant_count
+            })
+        
+        # If no items to process, return empty results
+        if not measurements_list and not compliance_checks_list:
+            return jsonify({
+                'success': True,
+                'timestamp': datetime.now().isoformat(),
+                'measurements': [],
+                'complianceChecks': []
+            })
+        
+        # Call OpenAI API for batch analysis
+        ai_result = analyze_batch_with_ai(measurements_list, compliance_checks_list, real_key, model)
+        
+        if not ai_result:
+            return jsonify({'error': 'Failed to analyze with OpenAI API'}), 500
+        
+        # Merge AI results with original data
+        # Create lookup maps for AI results
+        ai_measurements_map = {m['measurementName']: m for m in ai_result.get('measurements', [])}
+        ai_checks_map = {c['ComplianceCheckName']: c for c in ai_result.get('complianceChecks', [])}
+        
+        # Build final results
+        final_measurements = []
+        for m in measurements_list:
+            ai_data = ai_measurements_map.get(m['measurementName'], {})
+            final_measurements.append({
+                'measurementName': m['measurementName'],
+                'value': m['value'],
+                'complianceCategory': ai_data.get('complianceCategory', 'BS 8214'),
+                'complianceCategoryDescription': ai_data.get('complianceCategoryDescription', 'UK fire door compliance standard.')
+            })
+        
+        final_compliance_checks = []
+        for c in compliance_checks_list:
+            ai_data = ai_checks_map.get(c['ComplianceCheckName'], {})
+            final_compliance_checks.append({
+                'ComplianceCheckName': c['ComplianceCheckName'],
+                'NonCompliantCount': c['NonCompliantCount'],
+                'complianceCategory': ai_data.get('complianceCategory', 'BS 8214'),
+                'complianceCategoryDescription': ai_data.get('complianceCategoryDescription', 'UK fire door compliance standard.')
+            })
+        
+        results = {
+            'success': True,
+            'timestamp': datetime.now().isoformat(),
+            'measurements': final_measurements,
+            'complianceChecks': final_compliance_checks,
+            'ai_analysis': {
+                'model': model,
+                'tokens_used': ai_result.get('tokens_used', 0),
+                'input_tokens': ai_result.get('input_tokens', 0),
+                'output_tokens': ai_result.get('output_tokens', 0),
+                'cost_usd': ai_result.get('cost_usd', 0)
+            }
+        }
+        
+        return jsonify(results)
+        
+    except Exception as e:
+        print(f"Error in analyze_batch_measurements: {e}")
+        import traceback
+        print(f"Traceback: {traceback.format_exc()}")
+        return jsonify({'error': f'Batch analysis failed: {str(e)}'}), 500
 
 def handle_numeric_measurement_unified(gap_type, value, unit, api_key, model, ai_provider, threshold, threshold_type):
     """Handle numeric measurements with AI provider support"""
