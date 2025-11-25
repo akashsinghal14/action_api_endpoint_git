@@ -14,6 +14,8 @@ from collections import OrderedDict
 import base64
 import requests
 from urllib.parse import urlparse
+from PIL import Image
+import io
 
 # Load environment variables from .env file
 load_dotenv()
@@ -197,6 +199,15 @@ class RateLimiter:
         return max(0, self.time_window - (now - oldest))
 
 rate_limiter = RateLimiter()
+
+# Image optimization configuration
+MAX_IMAGE_SIZE_MB = 20
+MAX_IMAGE_DIMENSION = 512  # Resize images to max 512px on longest side
+JPEG_QUALITY = 65  # Good balance between quality and file size
+
+# Connection pooling for requests
+session = requests.Session()
+session.headers.update({'User-Agent': 'FireDoorCompliance/1.0'})
 
 def get_category_for_measurement(measurement_type: str) -> str:
     """Get appropriate category for measurement type"""
@@ -1948,156 +1959,141 @@ def handle_boolean_measurement_unified(measurement_type, value, api_key, model, 
     except Exception as e:
         return jsonify({'error': f'{measurement_type} analysis failed: {str(e)}'}), 500
 
-def analyze_image_compliance(image_data: bytes, api_key: str, model: str = 'gpt-4o'):
-    """Analyze door image for compliance using OpenAI Vision API
-    
-    Comprehensive analysis covering 11 fire door compliance categories from main2.py
+def optimize_image(image_data: bytes) -> bytes:
+    """
+    Optimize image by resizing and compressing.
+    Returns optimized image as JPEG bytes.
     """
     try:
-        # Encode image to base64
-        image_base64 = base64.b64encode(image_data).decode('utf-8')
+        start_time = time.time()
         
-        # Determine image format from file signature
-        image_format = 'jpeg'  # Default
-        if image_data.startswith(b'\x89PNG'):
-            image_format = 'png'
-        elif image_data.startswith(b'GIF'):
-            image_format = 'gif'
-        elif image_data.startswith(b'RIFF') and b'WEBP' in image_data[:12]:
-            image_format = 'webp'
-        elif image_data.startswith(b'\xff\xd8\xff'):
-            image_format = 'jpeg'
-        # Default to jpeg if format not detected
+        # Open image
+        image = Image.open(io.BytesIO(image_data))
+        original_size = len(image_data)
         
-        # Comprehensive vision prompt from main2.py
-        vision_prompt = """
-You are a fire safety compliance inspector specializing in UK property regulations. Analyze the attached image of a fire door and assess its compliance based on the following criteria:
+        # Convert RGBA to RGB if necessary (removes alpha channel, reduces size)
+        if image.mode in ('RGBA', 'LA', 'P'):
+            # Create white background
+            rgb_image = Image.new('RGB', image.size, (255, 255, 255))
+            if image.mode == 'P':
+                image = image.convert('RGBA')
+            rgb_image.paste(image, mask=image.split()[-1] if image.mode in ('RGBA', 'LA') else None)
+            image = rgb_image
+        elif image.mode != 'RGB':
+            image = image.convert('RGB')
+        
+        # Resize if image is too large
+        width, height = image.size
+        if width > MAX_IMAGE_DIMENSION or height > MAX_IMAGE_DIMENSION:
+            # Calculate new dimensions maintaining aspect ratio
+            if width > height:
+                new_width = MAX_IMAGE_DIMENSION
+                new_height = int(height * (MAX_IMAGE_DIMENSION / width))
+            else:
+                new_height = MAX_IMAGE_DIMENSION
+                new_width = int(width * (MAX_IMAGE_DIMENSION / height))
+            
+            image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            print(f"  Resized image: {width}x{height} -> {new_width}x{new_height}")
+        
+        # Save as optimized JPEG
+        output = io.BytesIO()
+        image.save(output, format='JPEG', quality=JPEG_QUALITY, optimize=True)
+        optimized_data = output.getvalue()
+        optimized_size = len(optimized_data)
+        
+        optimization_time = time.time() - start_time
+        reduction = ((original_size - optimized_size) / original_size) * 100
+        
+        print(f"  Image optimization: {original_size/1024:.1f}KB -> {optimized_size/1024:.1f}KB ({reduction:.1f}% reduction) in {optimization_time:.2f}s")
+        
+        return optimized_data
+        
+    except Exception as e:
+        print(f"  Warning: Image optimization failed: {e}. Using original image.")
+        return image_data
 
-⚠️ IMPORTANT: You must return a complete JSON object with **all 11 categories**, even if some features are not visible or cannot be verified. Do not omit any category.
+def analyze_image_compliance(image_data: bytes, api_key: str, model: str = 'gpt-4o'):
+    """
+    Analyze door image for compliance using OpenAI Vision API.
+    Optimized for performance with image compression and optimizations.
+    """
+    try:
+        total_start_time = time.time()
+        
+        # Optimize image
+        print("  Optimizing image...")
+        optimize_start = time.time()
+        optimized_image = optimize_image(image_data)
+        optimize_time = time.time() - optimize_start
+        
+        # Encode to base64
+        encode_start = time.time()
+        image_base64 = base64.b64encode(optimized_image).decode('utf-8')
+        encode_time = time.time() - encode_start
+        print(f"  Base64 encoding: {len(image_base64)/1024:.1f}KB in {encode_time:.3f}s")
+        
+        # Optimized vision prompt - shorter and more focused
+        OPTIMIZED_VISION_PROMPT = """UK fire safety inspector. Analyze fire door image for compliance.
 
-For each of the following categories, return:
-- `"compliance_status"`: true if the feature is visibly present and appears compliant, false if missing or non-compliant.
+Return JSON with exactly 9 categories. Do NOT include Gap Measurements or Frame Integrity. For each category, set compliance_status: true if compliant, false if non-compliant or missing.
 
-Categories to assess:
-1. 🔖 Keep Shut Sign
-2. 🚪 Self-Closing Device
-3. 🔥 Intumescent Strips
-4. 🧲 Hold Open Device
-5. 📜 Certification Visible
-6. 🪟 Contains Glazing
-7. 🔥 Pyro Glazing
-8. 📏 Gap Measurements
-9. 🔩 Hinge Condition
-10. 🧱 Frame Integrity
-11. 🚨 Door Damage Check
+Categories to analyze:
+1. Keep Shut Sign - Visible, legible signage
+2. Self-Closing Device - Present and functional
+3. Intumescent Strips - Visible, continuous, properly installed
+4. Hold Open Device - Present and compliant (if visible)
+5. Certification Visible - Label/plate visible and legible
+6. Contains Glazing - Mark true only if glazing is visible, sealed, intact; else false
+7. Pyro Glazing - Fire-rated if glazing present
+8. Hinge Condition - Mark true only if 3 hinges are clearly visible, secure, undamaged; else false
+9. Door Damage Check - Inspect for visible physical damage only
 
-1. 🔖 Keep Shut Sign:
-   - Is there a clearly visible 'Fire Door Keep Shut' sign?
-   - Is the signage positioned correctly and legible?
+DO NOT include: Gap Measurements, Frame Integrity
 
-2. 🚪 Self-Closing Device:
-   - Is a self-closing device present?
-   - Does it appear functional and properly installed?
-
-3. 🔥 Intumescent Strips:
-   - Are intumescent strips visible around the door edge or frame?
-   - Do they appear continuous and properly installed?
-
-4. 🧲 Hold Open Device:
-   - Is there a hold-open device present? This may include:
-     - Wall-mounted electromagnetic holders
-     - Overhead arms or brackets that prevent the door from closing
-     - Floor-mounted or frame-mounted mechanical devices
-   - If visible, does it appear to comply with fire safety standards (e.g., automatic release on alarm)?
-   - If the image shows a device mounted above or beside the door that holds it open, assume it is a hold-open device unless clearly non-compliant.
-   - If no hold-open device is visible, mark `"compliance_status": false` and `"details": "Not visible in image"`.
-
-5. 📜 Certification Visible:
-   - Is there a certification label or plate visible on the door or frame?
-   - Is it legible and from a recognized authority?
-
-6. 🪟 Contains Glazing:
-   - Does the door contain any glazing (glass panels)?
-   - Is the glazing properly sealed and positioned?
-   - Set compliance_status: true only if glazing is present, properly sealed, and there are no signs of damage.
-
-7. 🔥 Pyro Glazing:
-   - If glazing is present, does it appear to be pyro glazing (fire-rated)?
-   - Are there markings or visual indicators of fire resistance?
-
-8. 📏 Gap Measurements:
-   - Estimate the gaps around the door edges (top, sides, bottom).
-   - Are they within the acceptable range (typically 2–4mm)?
-
-9. 🔩 Hinge Condition:
-   - Are there at least three hinges?
-   - Are they secure, undamaged, and free of visible wear?
-
-10. 🧱 Frame Integrity:
-   - Is the door frame robust and undamaged?
-   - Are there signs of warping, cracks, or poor installation?
-
-11. 🚨 Door Damage Check:
-- Always include this category.
-- Carefully inspect the fire door and all its components for **visible physical damage only**.
-- This includes:
-  - 🔖 Keep Shut Sign: faded, illegible, cracked, or physically damaged signage
-  - 🚪 Self-Closing Device: broken, bent, or visibly malfunctioning closer
-  - 🔥 Intumescent Strips: degraded, torn, or improperly installed strips
-  - 🪟 Glazing: cracked, shattered, broken, or missing glass panels — this is considered serious door damage
-  - 🔥 Pyro Glazing: damaged fire-rated glass or broken markings
-  - 📏 Gap Measurements: uneven, excessive gaps that indicate warping  
-    📏 Gap Measurements: Only include in `"Door Damage Check"` if gaps are visibly uneven **and clearly indicate structural warping or distortion**. Do not report diagnostic observations (e.g. "may indicate warping") unless physical damage is confirmed.
-  - 🔩 Hinge Condition: bent, loose, rusted, or broken hinges
-  - 🧱 Frame Integrity: cracked, split, warped, or poorly fitted frame
-
-- Do **not** include components that are simply missing or not visible — only report actual damage.
-- If **any** of these components show visible damage, set `"door_damaged": true`.
-- If **all** components are intact and undamaged, set `"door_damaged": false`.
-- You must explicitly mention glazing damage in the `details` field if broken glass is visible. 
-- If Door is not Damaged Compliance Status should be true else false
-
-Return your findings in the following JSON format:
+Return format:
 {
-  "compliance_status": true | false, // Overall compliance status
+  "compliance_status": true | false,
   "door_damaged": true | false,
   "issues_found": [
     {
-      "category": "Keep Shut Sign" | "Self-Closing Device" | "Intumescent Strips" | "Hold Open Device" | "Certification Visible" | "Contains Glazing" | "Pyro Glazing" | "Gaps" | "Hinges" | "Frame" | "Door Damage Check",
+      "category": "Category Name",
       "compliance_status": true | false,
-      "details": "Brief explanation of what was observed"
+      "details": "Brief observation"
     }
   ],
-  "overall_comments": "Summary of the inspection and any recommendations"
+  "overall_comments": "Summary"
 }
 
-Only include observations based on visible evidence in the image. Do not speculate beyond what is shown."""
-
+Only report visible evidence. Do not speculate."""
+        
         # Rate limiting check
         if not rate_limiter.can_make_call():
             raise Exception('Rate limit exceeded')
         
         # Call OpenAI Vision API
-        client = openai.OpenAI(api_key=api_key)
+        api_start = time.time()
+        client = openai.OpenAI(api_key=api_key, timeout=60.0)
         response = client.chat.completions.create(
             model=model,
             messages=[
                 {
                     "role": "user",
                     "content": [
-                        {"type": "text", "text": vision_prompt},
+                        {"type": "text", "text": OPTIMIZED_VISION_PROMPT},
                         {
                             "type": "image_url",
                             "image_url": {
-                                "url": f"data:image/{image_format};base64,{image_base64}"
+                                "url": f"data:image/jpeg;base64,{image_base64}"
                             }
                         }
                     ]
                 }
             ],
-            max_tokens=2000,  # Increased for comprehensive analysis
-            temperature=0.3
+            max_tokens=500,  # Reduced for faster response
+            temperature=0.1  # Lower temperature for faster, more deterministic responses
         )
+        api_time = time.time() - api_start
         
         ai_response = response.choices[0].message.content
         input_tokens = response.usage.prompt_tokens
@@ -2105,10 +2101,10 @@ Only include observations based on visible evidence in the image. Do not specula
         total_tokens = response.usage.total_tokens
         cost = calculate_openai_cost(model, input_tokens, output_tokens)
         
-        print(f"OpenAI Vision API response: {ai_response[:200]}...")
-        print(f"Cost: ${cost} (Input: {input_tokens}, Output: {output_tokens})")
+        print(f"  OpenAI API call: {api_time:.2f}s (Input: {input_tokens}, Output: {output_tokens}, Cost: ${cost:.4f})")
         
         # Parse JSON response
+        parse_start = time.time()
         json_pattern = re.compile(r'\{[\s\S]*\}')
         json_match = json_pattern.search(ai_response)
         
@@ -2116,15 +2112,16 @@ Only include observations based on visible evidence in the image. Do not specula
             raise ValueError('No JSON found in AI response')
         
         parsed_response = json.loads(json_match.group(0))
+        parse_time = time.time() - parse_start
         
-        # Handle new format from main2.py with issues_found array
+        # Process response
+        process_start = time.time()
         if 'issues_found' in parsed_response:
             compliance_status = parsed_response.get('compliance_status', False)
             door_damaged = parsed_response.get('door_damaged', False)
             issues_found = parsed_response.get('issues_found', [])
-            overall_comments = parsed_response.get('overall_comments', '')
             
-            # Map category names from main2.py to component keys
+            # Map category names to component keys
             category_mapping = {
                 'Keep Shut Sign': 'keep_shut_sign',
                 'Self-Closing Device': 'self_closing_device',
@@ -2133,73 +2130,53 @@ Only include observations based on visible evidence in the image. Do not specula
                 'Certification Visible': 'certification_visible',
                 'Contains Glazing': 'contains_glazing',
                 'Pyro Glazing': 'pyro_glazing',
-                'Gaps': 'gap_measurements',
+                # 'Gaps': 'gap_measurements',  # COMMENTED OUT
                 'Hinges': 'hinge_condition',
-                'Frame': 'frame_integrity',
+                # 'Frame': 'frame_integrity',  # COMMENTED OUT
                 'Door Damage Check': 'door_damage_check'
             }
             
-            # Transform issues_found array into components format
+            # Categories to skip (commented out)
+            skip_categories = ['Gaps', 'Gap Measurements', 'Frame', 'Frame Integrity']
+            
             component_breakdown = {}
             for issue in issues_found:
                 category_name = issue.get('category', '')
-                component_key = category_mapping.get(category_name, category_name.lower().replace(' ', '_'))
                 
-                # Performance optimization: Only include compliant status
-                # Removed: visible, present, description (can be re-enabled later)
+                # Skip commented out categories
+                if category_name in skip_categories:
+                    continue
+                
+                component_key = category_mapping.get(category_name, category_name.lower().replace(' ', '_'))
                 component_breakdown[component_key] = {
-                    'compliant': issue.get('compliance_status', False),
-                    # 'visible': is_visible,  # Commented out for performance
-                    # 'present': is_present,  # Commented out for performance
-                    # 'description': issue.get('details', 'Not analyzed')  # Commented out for performance
-                }
-            
-            # Build result in app_both.py format
-            result = {
-                'success': True,
-                'compliance_status': compliance_status,
-                'door_damaged': door_damaged,  # Additional field from main2.py
-                'components': component_breakdown,
-                # 'analysis_summary': overall_comments,  # Commented out for performance
-                'timestamp': datetime.now().isoformat(),
-                'ai_model': model,
-                'tokens_used': total_tokens,
-                'input_tokens': input_tokens,
-                'output_tokens': output_tokens,
-                'cost_usd': cost
-            }
-        # Handle old format (backward compatibility)
-        elif 'components' in parsed_response:
-            compliance_status = parsed_response.get('overall_compliance', False)
-            
-            # Extract component details
-            components = parsed_response.get('components', {})
-            component_breakdown = {}
-            for component_name in ['hinge', 'glazing', 'intumescent_strips', 'handles']:
-                comp_data = components.get(component_name, {})
-                # Performance optimization: Only include compliant status
-                # Removed: visible, present, description (can be re-enabled later)
-                component_breakdown[component_name] = {
-                    'compliant': comp_data.get('compliant', False),
-                    # 'visible': comp_data.get('visible', False),  # Commented out for performance
-                    # 'present': comp_data.get('present', False),  # Commented out for performance
-                    # 'description': comp_data.get('description', 'Not analyzed')  # Commented out for performance
+                    'compliant': issue.get('compliance_status', False)
                 }
             
             result = {
                 'success': True,
                 'compliance_status': compliance_status,
+                'door_damaged': door_damaged,
                 'components': component_breakdown,
-                # 'analysis_summary': parsed_response.get('analysis_summary', ''),  # Commented out for performance
                 'timestamp': datetime.now().isoformat(),
                 'ai_model': model,
                 'tokens_used': total_tokens,
                 'input_tokens': input_tokens,
                 'output_tokens': output_tokens,
-                'cost_usd': cost
+                'cost_usd': round(cost, 6),
+                'performance': {
+                    'total_time': round(time.time() - total_start_time, 2),
+                    'image_optimization': round(optimize_time, 2),
+                    'base64_encoding': round(encode_time, 3),
+                    'api_call': round(api_time, 2),
+                    'parsing': round(parse_time, 3),
+                    'processing': round(time.time() - process_start, 3)
+                }
             }
         else:
-            raise ValueError('Invalid response format from AI - missing required fields')
+            raise ValueError('Invalid response format from AI - missing issues_found')
+        
+        total_time = time.time() - total_start_time
+        print(f"  Total analysis time: {total_time:.2f}s")
         
         return result
         
@@ -2209,20 +2186,24 @@ Only include observations based on visible evidence in the image. Do not specula
         print(f"Traceback: {traceback.format_exc()}")
         return None
 
-def download_image_from_url(url: str, max_size: int = 20 * 1024 * 1024, timeout: int = 30) -> bytes:
-    """Download image from URL with size and timeout validation"""
+def download_image_from_url(url: str, max_size: int = MAX_IMAGE_SIZE_MB * 1024 * 1024, timeout: int = 15) -> bytes:
+    """
+    Download image from URL with optimized settings.
+    Uses connection pooling for better performance.
+    """
     try:
+        start_time = time.time()
+        
         # Validate URL
         parsed = urlparse(url)
         if not parsed.scheme or not parsed.netloc:
             raise ValueError('Invalid URL format')
         
-        # Only allow HTTP and HTTPS
         if parsed.scheme not in ['http', 'https']:
-            raise ValueError(f'Unsupported URL scheme: {parsed.scheme}. Only HTTP and HTTPS are allowed.')
+            raise ValueError(f'Unsupported URL scheme: {parsed.scheme}')
         
-        # Download image
-        response = requests.get(url, timeout=timeout, stream=True)
+        # Download with connection pooling
+        response = session.get(url, timeout=timeout, stream=True)
         response.raise_for_status()
         
         # Check content type
@@ -2240,6 +2221,9 @@ def download_image_from_url(url: str, max_size: int = 20 * 1024 * 1024, timeout:
         if len(image_data) == 0:
             raise ValueError('Downloaded image is empty')
         
+        download_time = time.time() - start_time
+        print(f"  Downloaded image: {len(image_data)/1024:.1f}KB in {download_time:.2f}s")
+        
         return image_data
         
     except requests.exceptions.RequestException as e:
@@ -2251,12 +2235,16 @@ def download_image_from_url(url: str, max_size: int = 20 * 1024 * 1024, timeout:
 def analyze_compliance_image():
     """Analyze door image for compliance check using OpenAI Vision API
     
-    Supports three input formats:
-    1. JSON with image_url: Download image from URL
-    2. JSON with image_base64: Base64-encoded image
-    3. Multipart form-data: Direct file upload with 'image' key
+    Supports four input formats:
+    1. JSON with image_path: Local file path (priority)
+    2. JSON with image_url: Download image from URL
+    3. JSON with image_base64: Base64-encoded image
+    4. Multipart form-data: Direct file upload with 'image' key
+    
+    Optimized for performance with image compression and optimizations.
     """
     try:
+        request_start_time = time.time()
         image_data = None
         api_key_param = None
         model = None
@@ -2268,39 +2256,54 @@ def analyze_compliance_image():
             api_key_param = data.get('api_key')
             model = data.get('model') or DEFAULT_OPENAI_MODEL
             
-            # Check for image URL first (most common for production)
+            # Priority order: image_path → image_base64 → image_url
+            image_path = data.get('image_path')
             image_url = data.get('image_url') or data.get('imageUrl')
             image_base64_str = data.get('image_base64') or data.get('imageBase64')
             
-            if image_url:
-                # Download image from URL
+            if image_path:
+                # Read image from local file path
                 try:
-                    print(f"Downloading image from URL: {image_url}")
-                    image_data = download_image_from_url(image_url)
-                    print(f"Successfully downloaded image: {len(image_data)} bytes")
+                    print(f"  Reading image from local path: {image_path}")
+                    if not os.path.exists(image_path):
+                        return jsonify({'error': f'Image file not found at path: {image_path}'}), 400
+                    
+                    with open(image_path, 'rb') as f:
+                        image_data = f.read()
+                    print(f"  Read image from path: {len(image_data)/1024:.1f}KB")
                 except Exception as e:
-                    return jsonify({'error': f'Failed to download image from URL: {str(e)}'}), 400
+                    return jsonify({'error': f'Failed to read image from path: {str(e)}'}), 400
             
             elif image_base64_str:
                 # Decode base64 image
                 try:
+                    print(f"  Using base64 image data")
                     # Remove data URL prefix if present (e.g., "data:image/jpeg;base64,")
                     if ',' in image_base64_str:
                         image_base64_str = image_base64_str.split(',')[1]
                     
                     image_data = base64.b64decode(image_base64_str)
-                    print(f"Successfully decoded base64 image: {len(image_data)} bytes")
+                    print(f"  Decoded base64 image: {len(image_data)/1024:.1f}KB")
                 except Exception as e:
                     return jsonify({'error': f'Invalid base64 image data: {str(e)}'}), 400
+            
+            elif image_url:
+                # Download image from URL
+                try:
+                    print(f"  Downloading image from URL: {image_url}")
+                    image_data = download_image_from_url(image_url)
+                    print(f"  Successfully downloaded image: {len(image_data)} bytes")
+                except Exception as e:
+                    return jsonify({'error': f'Failed to download image from URL: {str(e)}'}), 400
             else:
                 return jsonify({
-                    'error': 'No image provided. Use one of: "image_url" (URL to image), "image_base64" (base64 string), or multipart/form-data with "image" file.'
+                    'error': 'No image provided. Use one of: "image_path" (local file path), "image_url" (URL to image), "image_base64" (base64 string), or multipart/form-data with "image" file.'
                 }), 400
         else:
             # Multipart form-data request with file upload
             if 'image' not in request.files:
                 return jsonify({
-                    'error': 'No image file provided. Please upload an image file with key "image", or use JSON with "image_url" or "image_base64" field.'
+                    'error': 'No image file provided. Please upload an image file with key "image", or use JSON with "image_path", "image_url", or "image_base64" field.'
                 }), 400
             
             image_file = request.files['image']
@@ -2321,18 +2324,20 @@ def analyze_compliance_image():
             return jsonify({'error': 'Image data is empty'}), 400
         
         # Validate image size (max 20MB for OpenAI)
-        max_size = 20 * 1024 * 1024  # 20MB
+        max_size = MAX_IMAGE_SIZE_MB * 1024 * 1024
         if len(image_data) > max_size:
-            return jsonify({'error': f'Image file too large. Maximum size is 20MB, got {len(image_data) / 1024 / 1024:.2f}MB'}), 400
+            return jsonify({'error': f'Image file too large. Maximum size is {MAX_IMAGE_SIZE_MB}MB, got {len(image_data) / 1024 / 1024:.2f}MB'}), 400
         
-        # Validate API key
+        # Use default API key from environment if not provided
         if not api_key_param:
-            return jsonify({'error': 'API key is required. Please provide api_key parameter.'}), 400
+            # Try to use default 'openai_key' from API_KEY_MAPPING
+            api_key_param = 'openai_key'
+            print("  No API key provided, using default 'openai_key' from environment")
         
         # Resolve API key
         real_key = resolve_api_key(api_key_param, 'openai')
         if not real_key:
-            return jsonify({'error': 'Invalid OpenAI API key'}), 400
+            return jsonify({'error': 'Invalid OpenAI API key. Please provide a valid api_key parameter or set OPENAI_API_KEY in environment variables.'}), 400
         
         # Validate model (must be vision-capable)
         if model not in ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo']:
@@ -2340,11 +2345,26 @@ def analyze_compliance_image():
             model = 'gpt-4o'
             print(f"Warning: Model may not support vision, defaulting to gpt-4o")
         
+        print(f"\n{'='*60}")
+        print(f"Starting image compliance analysis")
+        print(f"  Model: {model}")
+        print(f"{'='*60}")
+        
         # Analyze image
         result = analyze_image_compliance(image_data, real_key, model)
         
         if not result:
             return jsonify({'error': 'Failed to analyze image. Please check image format and try again.'}), 500
+        
+        # Add download/read time to performance metrics if available
+        if 'performance' in result:
+            download_time = time.time() - request_start_time - result['performance'].get('total_time', 0)
+            result['performance']['download'] = round(download_time, 2)
+            result['performance']['request_total'] = round(time.time() - request_start_time, 2)
+        
+        print(f"\n{'='*60}")
+        print(f"Analysis complete in {result.get('performance', {}).get('request_total', 0):.2f}s")
+        print(f"{'='*60}\n")
         
         return jsonify(result)
         
@@ -2448,6 +2468,6 @@ if __name__ == '__main__':
     print("-" * 50)
     
     # Start cache warming during app initialization
-    start_cache_warming()
+    # start_cache_warming()
     
     app.run(debug=True, host='0.0.0.0', port=port)
