@@ -2190,6 +2190,7 @@ def download_image_from_url(url: str, max_size: int = MAX_IMAGE_SIZE_MB * 1024 *
     """
     Download image from URL with optimized settings.
     Uses connection pooling for better performance.
+    Handles Azure Blob Storage and other services that return application/octet-stream.
     """
     try:
         start_time = time.time()
@@ -2202,14 +2203,28 @@ def download_image_from_url(url: str, max_size: int = MAX_IMAGE_SIZE_MB * 1024 *
         if parsed.scheme not in ['http', 'https']:
             raise ValueError(f'Unsupported URL scheme: {parsed.scheme}')
         
+        # Check URL file extension for image types (fallback for blob storage)
+        url_lower = url.lower()
+        image_extensions = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg']
+        has_image_extension = any(url_lower.endswith(ext) for ext in image_extensions)
+        
         # Download with connection pooling
         response = session.get(url, timeout=timeout, stream=True)
         response.raise_for_status()
         
-        # Check content type
+        # Check content type - be lenient for blob storage
         content_type = response.headers.get('content-type', '').lower()
-        if not content_type.startswith('image/'):
-            raise ValueError(f'URL does not point to an image. Content-Type: {content_type}')
+        is_valid_image_content_type = content_type.startswith('image/')
+        is_octet_stream = content_type == 'application/octet-stream' or content_type == ''
+        
+        # Allow if:
+        # 1. Content-Type is image/* (proper servers)
+        # 2. Content-Type is application/octet-stream or empty AND URL has image extension (blob storage)
+        if not is_valid_image_content_type:
+            if is_octet_stream and has_image_extension:
+                print(f"  Content-Type is '{content_type}', but URL has image extension - allowing download")
+            else:
+                raise ValueError(f'URL does not point to an image. Content-Type: {content_type}, URL extension check: {has_image_extension}')
         
         # Stream download with size limit
         image_data = b''
