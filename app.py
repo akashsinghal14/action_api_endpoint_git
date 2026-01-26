@@ -546,9 +546,9 @@ Return JSON:
             "dueDate": "DD/MM/YYYY",
             "actionDescription": "description",
             "remediationOptions": [
-                {{"option": "Option 1: Quick Fix", "plan": "steps"}},
-                {{"option": "Option 2: Standard Solution", "plan": "steps"}},
-                {{"option": "Option 3: Comprehensive Fix", "plan": "steps"}}
+                {{"option": "Option 1:", "plan": "steps"}},
+                {{"option": "Option 2:", "plan": "steps"}},
+                {{"option": "Option 3:", "plan": "steps"}}
             ],
             "confidenceScore": "70-98"
         }}
@@ -666,9 +666,9 @@ Return JSON:
             "dueDate": "DD/MM/YYYY",
             "actionDescription": "description",
             "remediationOptions": [
-                {{"option": "Option 1: Quick Fix", "plan": "steps"}},
-                {{"option": "Option 2: Standard Solution", "plan": "steps"}},
-                {{"option": "Option 3: Comprehensive Fix", "plan": "steps"}}
+                {{"option": "Option 1:", "plan": "steps"}},
+                {{"option": "Option 2:", "plan": "steps"}},
+                {{"option": "Option 3:", "plan": "steps"}}
             ],
             "confidenceScore": "70-98"
         }}
@@ -1190,9 +1190,9 @@ def handle_numeric_measurement_internal(gap_type, value, unit, api_key, model, a
                 'dueDate': get_due_date(severity),
                 'actionDescription': description,
                 'remediationOptions': [
-                    {'option': 'Option 1: Quick Fix', 'plan': f'Basic solution for {gap_type.replace("_", " ")}.'},
-                    {'option': 'Option 2: Standard Solution', 'plan': f'Quality solution for {gap_type.replace("_", " ")}.'},
-                    {'option': 'Option 3: Comprehensive Fix', 'plan': f'Premium solution with professional testing.'},
+                    {'option': 'Option 1:', 'plan': f'Basic solution for {gap_type.replace("_", " ")}.'},
+                    {'option': 'Option 2:', 'plan': f'Quality solution for {gap_type.replace("_", " ")}.'},
+                    {'option': 'Option 3:', 'plan': f'Premium solution with professional testing.'},
                 ],
                 'confidenceScore': 98 if threshold_type == 'max_allowed' else 85,
                 'complianceCategory': get_compliance_category(gap_type, description),
@@ -1250,9 +1250,9 @@ def handle_boolean_measurement_internal(measurement_type, value, api_key, model,
                     'dueDate': get_due_date(default_severity),
                     'actionDescription': description,
                     'remediationOptions': [
-                        {'option': 'Option 1: Quick Fix', 'plan': f'Install basic {measurement_type.replace("_", " ")} immediately.'},
-                        {'option': 'Option 2: Standard Solution', 'plan': f'Install quality {measurement_type.replace("_", " ")} with proper setup.'},
-                        {'option': 'Option 3: Comprehensive Fix', 'plan': f'Complete {measurement_type.replace("_", " ")} installation with testing.'},
+                        {'option': 'Option 1:', 'plan': f'Install basic {measurement_type.replace("_", " ")} immediately.'},
+                        {'option': 'Option 2:', 'plan': f'Install quality {measurement_type.replace("_", " ")} with proper setup.'},
+                        {'option': 'Option 3:', 'plan': f'Complete {measurement_type.replace("_", " ")} installation with testing.'},
                     ],
                     'confidenceScore': 98 if default_severity == 'critical' else (95 if default_severity == 'high' else 85),
                     'complianceCategory': get_compliance_category(measurement_type, description),
@@ -1324,9 +1324,9 @@ def slim_head(value=None, unit=None):
                 'dueDate': get_due_date('critical'),
                 'actionDescription': description,
                 'remediationOptions': [
-                    {'option': 'Option 1: Quick Fix - Basic Strips', 'plan': 'Install basic intumescent strips at the head.'},
-                    {'option': 'Option 2: Standard Solution - Quality Strips', 'plan': 'Install high-quality strips; adjust alignment if needed.'},
-                    {'option': 'Option 3: Comprehensive Fix', 'plan': 'Premium strips with smoke seals and full alignment.'},
+                    {'option': 'Option 1: Basic Strips', 'plan': 'Install basic intumescent strips at the head.'},
+                    {'option': 'Option 2: Quality Strips', 'plan': 'Install high-quality strips; adjust alignment if needed.'},
+                    {'option': 'Option 3: ', 'plan': 'Premium strips with smoke seals and full alignment.'},
                 ],
                 'confidenceScore': 92,
                 'complianceCategory': get_compliance_category('head', description),
@@ -1871,9 +1871,9 @@ def handle_numeric_measurement_unified(gap_type, value, unit, api_key, model, ai
                 'dueDate': get_due_date(severity),
                 'actionDescription': description,
                 'remediationOptions': [
-                    {'option': 'Option 1: Quick Fix', 'plan': f'Basic solution for {gap_type.replace("_", " ")}.'},
-                    {'option': 'Option 2: Standard Solution', 'plan': f'Quality solution for {gap_type.replace("_", " ")}.'},
-                    {'option': 'Option 3: Comprehensive Fix', 'plan': f'Premium solution with professional testing.'},
+                    {'option': 'Option 1:', 'plan': f'Basic solution for {gap_type.replace("_", " ")}.'},
+                    {'option': 'Option 2:', 'plan': f'Quality solution for {gap_type.replace("_", " ")}.'},
+                    {'option': 'Option 3:', 'plan': f'Premium solution with professional testing.'},
                 ],
                 'confidenceScore': 98 if threshold_type == 'max_allowed' else 85,
                 'complianceCategory': get_compliance_category(gap_type, description),
@@ -1933,9 +1933,9 @@ def handle_boolean_measurement_unified(measurement_type, value, api_key, model, 
                     'dueDate': get_due_date(default_severity),
                     'actionDescription': description,
                     'remediationOptions': [
-                        {'option': 'Option 1: Quick Fix', 'plan': f'Install basic {measurement_type.replace("_", " ")} immediately.'},
-                        {'option': 'Option 2: Standard Solution', 'plan': f'Install quality {measurement_type.replace("_", " ")} with proper setup.'},
-                        {'option': 'Option 3: Comprehensive Fix', 'plan': f'Complete {measurement_type.replace("_", " ")} installation with testing.'},
+                        {'option': 'Option 1:', 'plan': f'Install basic {measurement_type.replace("_", " ")} immediately.'},
+                        {'option': 'Option 2:', 'plan': f'Install quality {measurement_type.replace("_", " ")} with proper setup.'},
+                        {'option': 'Option 3:', 'plan': f'Complete {measurement_type.replace("_", " ")} installation with testing.'},
                     ],
                     'confidenceScore': 98 if default_severity == 'critical' else (95 if default_severity == 'high' else 85),
                     'complianceCategory': get_compliance_category(measurement_type, description),
