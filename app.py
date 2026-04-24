@@ -17,6 +17,8 @@ from urllib.parse import urlparse
 from PIL import Image
 import io
 
+from remediation_library import enrich_response_payload
+
 # Load environment variables from .env file
 load_dotenv()
 
@@ -208,6 +210,41 @@ JPEG_QUALITY = 65  # Good balance between quality and file size
 # Connection pooling for requests
 session = requests.Session()
 session.headers.update({'User-Agent': 'FireDoorCompliance/1.0'})
+
+
+def _polish_params_for_gap_analysis(real_api_key: Optional[str], model: Optional[str], provider: str):
+    """OpenAI key + model for polishing reference guidance after primary gap analysis (real_api_key is resolved secret)."""
+    if (
+        provider == 'openai'
+        and real_api_key
+        and real_api_key.startswith('sk-')
+        and not real_api_key.startswith('sk-ant-')
+    ):
+        return real_api_key, model or os.getenv('OPENAI_REFERENCE_POLISH_MODEL', 'gpt-4o-mini')
+    return os.getenv('OPENAI_API_KEY'), os.getenv('OPENAI_REFERENCE_POLISH_MODEL', 'gpt-4o-mini')
+
+
+def enrich_with_reference_guidance(
+    payload: Dict[str, Any],
+    measurement_type: str,
+    client_api_key: Optional[str] = None,
+    model: Optional[str] = None,
+    ai_provider: str = 'openai',
+) -> Dict[str, Any]:
+    """Attach referenceRemediation; uses OpenAI polish when a suitable key is available (respects rate limiter)."""
+    polish_key = resolve_api_key(client_api_key, 'openai') if client_api_key else None
+    if not polish_key:
+        polish_key = os.getenv('OPENAI_API_KEY')
+    if ai_provider == 'openai' and model:
+        polish_model = model
+    else:
+        polish_model = os.getenv('OPENAI_REFERENCE_POLISH_MODEL', 'gpt-4o-mini')
+    if polish_key and not rate_limiter.can_make_call():
+        polish_key = None
+    return enrich_response_payload(
+        payload, measurement_type, polish_openai_key=polish_key, polish_model=polish_model
+    )
+
 
 def get_category_for_measurement(measurement_type: str) -> str:
     """Get appropriate category for measurement type"""
@@ -729,7 +766,14 @@ def analyze_gap_with_ai(gap_type, value, unit, api_key, model, provider):
             cached_response = cache.get(cache_key)
             if cached_response:
                 print(f"Cache HIT for {gap_type}: {value} ({provider})")
-                return cached_response
+                if cached_response.get('referenceRemediation'):
+                    return cached_response
+                pk, pm = _polish_params_for_gap_analysis(api_key, model, provider)
+                if pk and not rate_limiter.can_make_call():
+                    pk = None
+                return enrich_response_payload(
+                    cached_response, gap_type, polish_openai_key=pk, polish_model=pm
+                )
         
         print(f"Cache MISS for {gap_type}: {value} - calling {provider} API")
         
@@ -886,6 +930,13 @@ def analyze_gap_with_ai(gap_type, value, unit, api_key, model, provider):
             response_data['min_required'] = min_size
         elif gap_type not in ['intumescent_strips', 'self_closing_device', 'keep_shut_sign', 'hold_open_device', 'certification_visible', 'glazing', 'pyro_glazing', 'door_close_fully', 'hinges_fire_rated']:
             response_data['max_allowed'] = max_gap
+
+        pk, pm = _polish_params_for_gap_analysis(api_key, model, provider)
+        if pk and not rate_limiter.can_make_call():
+            pk = None
+        response_data = enrich_response_payload(
+            response_data, gap_type, polish_openai_key=pk, polish_model=pm
+        )
         
         # Cache the response
         if ENABLE_CACHING:
@@ -1215,7 +1266,8 @@ def handle_numeric_measurement_internal(gap_type, value, unit, api_key, model, a
             result['max_allowed'] = threshold
         else:
             result['min_required'] = threshold
-            
+
+        result = enrich_with_reference_guidance(result, gap_type, api_key, model, ai_provider)
         return result
         
     except Exception as e:
@@ -1258,7 +1310,7 @@ def handle_boolean_measurement_internal(measurement_type, value, api_key, model,
                     'complianceCategory': get_compliance_category(measurement_type, description),
                 })
         
-        return {
+        payload = {
             'success': True,
             'measurement_type': measurement_type,
             'value': value,
@@ -1269,6 +1321,7 @@ def handle_boolean_measurement_internal(measurement_type, value, api_key, model,
             'analysis_type': 'ai' if (api_key and not is_compliant) else 'static',
             'ai_provider': ai_provider if (api_key and not is_compliant) else None,
         }
+        return enrich_with_reference_guidance(payload, measurement_type, api_key, model, ai_provider)
         
     except Exception as e:
         print(f"Error in handle_boolean_measurement_internal: {e}")
@@ -1332,7 +1385,7 @@ def slim_head(value=None, unit=None):
                 'complianceCategory': get_compliance_category('head', description),
             })
 
-        return jsonify({
+        resp = {
             'success': True,
             'measurement_type': 'head_gap',
             'value': value,
@@ -1344,7 +1397,8 @@ def slim_head(value=None, unit=None):
             'timestamp': datetime.now().isoformat(),
             'analysis_type': 'ai' if (api_key and not is_compliant) else 'static',
             'ai_provider': ai_provider if (api_key and not is_compliant) else None,
-        })
+        }
+        return jsonify(enrich_with_reference_guidance(resp, 'head', api_key, model, ai_provider))
     except Exception as e:
         return jsonify({'error': f'Head gap analysis failed: {str(e)}'}), 500
 
@@ -1896,8 +1950,8 @@ def handle_numeric_measurement_unified(gap_type, value, unit, api_key, model, ai
             result['max_allowed'] = threshold
         else:
             result['min_required'] = threshold
-            
-        return jsonify(result)
+
+        return jsonify(enrich_with_reference_guidance(result, gap_type, api_key, model, ai_provider))
         
     except Exception as e:
         return jsonify({'error': f'{gap_type} analysis failed: {str(e)}'}), 500
@@ -1944,7 +1998,7 @@ def handle_boolean_measurement_unified(measurement_type, value, api_key, model, 
         # Use original measurement type for response if provided, otherwise use internal name
         response_measurement_type = original_measurement_type if original_measurement_type else measurement_type
         
-        return jsonify({
+        payload = {
             'success': True,
             'measurement_type': response_measurement_type,
             'value': value,
@@ -1954,7 +2008,8 @@ def handle_boolean_measurement_unified(measurement_type, value, api_key, model, 
             'timestamp': datetime.now().isoformat(),
             'analysis_type': 'ai' if (api_key and not is_compliant) else 'static',
             'ai_provider': ai_provider if (api_key and not is_compliant) else None,
-        })
+        }
+        return jsonify(enrich_with_reference_guidance(payload, measurement_type, api_key, model, ai_provider))
         
     except Exception as e:
         return jsonify({'error': f'{measurement_type} analysis failed: {str(e)}'}), 500

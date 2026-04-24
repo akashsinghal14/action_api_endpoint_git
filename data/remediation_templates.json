@@ -1,0 +1,83 @@
+{
+  "version": "1.0.0",
+  "templates": {
+    "head": {
+      "title": "Perimeter gaps (head)",
+      "guidance": "Adjust, re-hang, or replace the door or frame so the gaps at the head and jambs are even and controlled all round. Investigate hinge wear, latch misalignment, frame movement, spread of the opening, or leaf distortion where the perimeter gap is excessive, uneven, or tight.\n\nAny trimming must remain within the manufacturer's certified trim allowances. If compliant perimeter gaps cannot be achieved without compromising the doorset, replace the leaf, frame, or complete doorset."
+    },
+    "hinge": {
+      "title": "Perimeter gaps (hinge jamb)",
+      "guidance": "Adjust, re-hang, or replace the door or frame so the gaps at the head and jambs are even and controlled all round. Investigate hinge wear, latch misalignment, frame movement, spread of the opening, or leaf distortion where the perimeter gap is excessive, uneven, or tight.\n\nRectify dropped leaves by tightening or replacing hinges, repairing fixing points, and realigning the leaf in the frame. If the hanging edge is damaged beyond repair or the drop has resulted from distortion of the leaf or frame, replace the affected component or the complete doorset."
+    },
+    "closing": {
+      "title": "Perimeter gaps (closing edge)",
+      "guidance": "Adjust, re-hang, or replace the door or frame so the gaps at the head and jambs are even and controlled all round. Ensure the leaf contacts the stops and seals correctly along the closing edge.\n\nAdjust the latch, keep, strike plate, and overall geometry so the door closes firmly onto the latch without manual assistance. If the latch cannot engage because of warping, misalignment, or frame distortion, correct the geometry first and then recommission the self-closing action."
+    },
+    "threshold": {
+      "title": "Threshold gaps",
+      "guidance": "Reduce any excessive gap at the bottom of the door so smoke control is maintained and the door can still operate freely. Re-hang or realign the leaf, correct hinge drop, and fit a compatible threshold seal or automatic drop seal where the doorset evidence allows it.\n\nWhere the gap is excessive because the leaf is undersized, over-trimmed, warped, or the floor has been altered beyond the doorset's tolerance, replace the leaf or complete doorset. Use a tested proprietary threshold solution rather than improvised packers, timber strips, or non-tested sealants."
+    },
+    "door_thickness": {
+      "title": "Door construction / thickness",
+      "guidance": "Where the leaf is hollow core, excessively thin, heavily altered, or otherwise clearly inconsistent with a fire-resisting doorset, replace it with a suitable certificated fire door or doorset. Older notional doors should only be retained where a competent assessment and the fire risk assessment confirm they remain fit for purpose in that location.\n\nDo not attempt to upgrade a non-compliant leaf with ad hoc laminations or packers unless there is specific test evidence for that doorset."
+    },
+    "frame_depth": {
+      "title": "Frame compatibility",
+      "guidance": "Ensure the frame depth and profile are compatible with the fire door rating, hinges, closers, locks, and seals required for the location. Where the frame is too shallow, damaged, or not of fire-resisting construction, repair or replace the frame as part of a compliant doorset solution.\n\nReinstate fixings, joints, and reinforcement so the frame remains sound, square, and capable of supporting the leaf and all ironmongery without movement."
+    },
+    "door_size": {
+      "title": "Door leaf size / fit",
+      "guidance": "Re-hang or realign the door so it sits square in the frame, opens freely, and contacts the stops and seals correctly. Only plane or trim the door within the certified trim allowances.\n\nIf the frame is not plumb, loose, spread, or distorted beyond repair, reset or replace the frame and refit or replace the doorset as necessary."
+    },
+    "intumescent_strips": {
+      "title": "Intumescent strips",
+      "guidance": "Replace missing, damaged, loose, discontinuous, incorrectly sized, or incorrectly located intumescent strips with compatible products in the correct position and profile for the doorset. Reinstate the correct groove detail or carrier arrangement where previous alteration has removed the seals.\n\nWhere the seal channel, edge detail, or leaf condition cannot be restored properly, replace the door leaf, frame component, or complete doorset.",
+      "damageTypes": [
+        "Missing or discontinuous strip",
+        "Wrong profile or location",
+        "Damaged groove or carrier",
+        "Paint contamination affecting performance"
+      ]
+    },
+    "self_closing_device": {
+      "title": "Self-closing device",
+      "guidance": "Install a suitable compatible self-closing device where one is required but has been removed, omitted, or never fitted. The closer should match the door size, weight, rating, usage pattern, and location, and should be fitted in accordance with the doorset evidence.\n\nAdjust or replace the self-closing device so the door closes fully into the frame from any angle and overcomes latch resistance. Remove wedges, disconnected closer arms, or any other condition that prevents the door from self-closing."
+    },
+    "keep_shut_sign": {
+      "title": "Fire door signage (keep shut)",
+      "guidance": "Provide and maintain correct fire door signage in line with the fire strategy and BS 5499. Signs must be legible, correctly worded for the door function, and positioned where they will be seen by building users.\n\nReplace missing, damaged, or incorrect signs and reinstate fixing methods that do not impair the doorset or certification markings."
+    },
+    "hold_open_device": {
+      "title": "Hold-open / free-swing / release device",
+      "guidance": "Repair, replace, or remove damaged, missing, non-approved, or non-functioning hold-open, free-swing, acoustic, or electromagnetic release devices. Test that any retained-open fire door releases correctly under local test and on relevant alarm operation, and that the door then closes and latches properly.\n\nIf the fire strategy does not justify a hold-open function, remove the device and restore normal compliant self-closing operation."
+    },
+    "certification_visible": {
+      "title": "Door certification / evidence of fire rating",
+      "guidance": "Confirm the door's fire-resisting status from a certification label or plug, manufacturer data, project records, or competent survey. Where no reliable evidence exists and the door may not be fire resisting, obtain specialist assessment or replace it with a suitable certificated doorset.\n\nWhere a certification plug, label, or traceable identification mark has been removed, painted over, or is unreadable, clean or expose it only if this can be done without damage. If the door cannot otherwise be verified, treat the rating as unconfirmed and seek specialist assessment or replacement."
+    },
+    "glazing": {
+      "title": "Glazing in fire doors",
+      "guidance": "Ensure glazing is fire-resisting, correctly specified for the door rating, and installed with tested beads, seals, and fixing detail for that doorset. Replace cracked, broken, loose, or wrongly specified glass and reinstate compatible fire-rated glazing systems.\n\nDo not substitute ordinary glass or untested panels where fire-resisting glazing is required."
+    },
+    "pyro_glazing": {
+      "title": "Pyro / fire-rated glazing",
+      "guidance": "Replace damaged, loose, incorrectly marked, or incompatible pyro or fire-rated glazing with products and installation details that match the doorset test evidence. Reinstate intumescent glazing seals and beads where they are missing or defective.\n\nWhere the glazing aperture or door leaf has been altered beyond the certified scope, replace the leaf or doorset with a suitable certificated assembly."
+    },
+    "door_close_fully": {
+      "title": "Door does not close fully",
+      "guidance": "Adjust or replace the self-closing device so the door closes fully into the frame from any angle and overcomes latch resistance. Rectify floor friction, hinge wear, frame distortion, warped leaves, pressure imbalance, or misaligned latch keeps that prevent full closure.\n\nRemove wedges, disconnected closer arms, or any other condition that prevents the door from self-closing. Replace the leaf or doorset if reliable self-closing cannot be restored."
+    },
+    "hinges_fire_rated": {
+      "title": "Fire-rated hinges",
+      "guidance": "Replace all non-fire-rated, damaged, worn, or unsuitable hinges with certified fire-rated hinges compatible with the door weight, door rating, and doorset evidence. Fit the correct screws and any required pads, liners, or packers in accordance with the product data or test evidence.\n\nInstall the missing hinge or hinges so the door has the quantity required by its test evidence. In most cases this will be a minimum of three certified fire-rated hinges, with four where the door is particularly large, heavy, or intensively used."
+    },
+    "cold_smoke_seals": {
+      "title": "Smoke seals / cold smoke seals",
+      "guidance": "Replace missing, damaged, flattened, torn, detached, or ineffective smoke seals so they make correct contact with the leaf or frame and provide the required smoke control for that location. Ensure any replacement seal is compatible with the doorset and its smoke-control requirement.\n\nWhere smoke leakage persists because of poor door geometry, excessive gaps, or incompatible threshold details, correct those defects or replace the leaf or doorset rather than adding improvised brushes or domestic seals."
+    },
+    "keep_locked_sign": {
+      "title": "Fire door signage (keep locked)",
+      "guidance": "Provide and maintain correct signage for doors that must be kept locked, in line with the fire strategy and BS 5499. Signs must be legible and appropriate to the door's function (for example locked service riser doors).\n\nReplace missing, damaged, or incorrect signs without obscuring certification labels or impairing door operation."
+    }
+  }
+}
