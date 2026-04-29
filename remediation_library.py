@@ -19,8 +19,8 @@ _ORIGINAL_DOC_PATH = os.path.join(
 # Internal measurement_type / gap_type -> exact section "title" in the original JSON
 MEASUREMENT_TO_SECTION_TITLE: Dict[str, str] = {
     "head": "Perimeter gaps (head and jambs)",
-    "hinge": "Perimeter gaps (head and jambs)",
-    "closing": "Perimeter gaps (head and jambs)",
+    "hinge": "Door leaf dropped / sagging on hinges",
+    "closing": "Does the door close fully",
     "threshold": "Threshold gaps",
     "door_thickness": "Door construction / thickness",
     "frame_depth": "Does the door fit correctly in the frame",
