@@ -2,7 +2,7 @@
 Reference remedial guidance from fire_inspect_action_list_original.json.
 
 Adds referenceRemediation to API payloads (does not replace actionItems from OpenAI/Claude).
-Optional: polish inspectorGuidance with OpenAI for professional UK English.
+Optional: polish inspectorGuidance with OpenAI — concise UK professional English (~48% of source length by default, same intent).
 """
 from __future__ import annotations
 
@@ -48,6 +48,15 @@ def _templates_enabled() -> bool:
 
 def _polish_enabled() -> bool:
     return os.getenv("ENABLE_REFERENCE_GUIDANCE_POLISH", "true").lower() in ("1", "true", "yes")
+
+
+def _reference_guidance_length_ratio() -> float:
+    """Target length vs source (default ~48% of original). Clamped to 0.35–0.70."""
+    try:
+        r = float(os.getenv("REFERENCE_GUIDANCE_TARGET_LENGTH_RATIO", "0.48"))
+    except ValueError:
+        r = 0.48
+    return max(0.35, min(0.70, r))
 
 
 def _load_sections() -> Dict[str, str]:
@@ -102,15 +111,26 @@ def _polish_guidance_openai(section_title: str, source_text: str, api_key: str, 
     try:
         import openai
 
+        ratio = _reference_guidance_length_ratio()
+        src_len = len(source_text.strip())
+        target_chars = max(100, int(src_len * ratio))
+        low = max(80, int(src_len * max(0.3, ratio - 0.08)))
+        high = int(src_len * min(0.72, ratio + 0.08))
+
         client = openai.OpenAI(api_key=api_key)
         prompt = (
             f"SECTION TITLE:\n{section_title}\n\n"
-            f"SOURCE TEXT (authoritative — preserve every technical requirement, BS/EN reference, "
-            f"millimetre value, product name, and legal/compliance meaning; do not invent facts):\n{source_text}\n\n"
-            "Rewrite this into clear, professional UK English suitable for a formal fire door inspection "
-            "report aimed at UK building safety professionals. Use British spelling and terminology where "
-            "appropriate. Do not add new requirements or change numbers. Preserve paragraph breaks using "
-            "the characters \\n\\n between paragraphs inside the string.\n\n"
+            f"SOURCE TEXT (authoritative — keep the same intent and obligations; preserve every BS/EN reference, "
+            f"millimetre value, product name, and compliance meaning; do not invent facts or drop required actions):\n"
+            f"{source_text}\n\n"
+            "TASK:\n"
+            f"- Rewrite in clear, professional UK English for building safety / fire door inspectors.\n"
+            f"- Be CONCISE: aim near {int(ratio * 100)}% of source length "
+            f"(source ~{src_len} characters; stay roughly {low}–{high} characters, ~{target_chars} ideal). "
+            "Prefer a single dense paragraph; use two short paragraphs only if two distinct topics are unavoidable. "
+            "No preamble or closing remarks.\n"
+            "- Do not add new requirements. Do not change numbers, standard names, or test evidence rules.\n"
+            "- Use \\n\\n between paragraphs only if there are two.\n\n"
             'Return a JSON object with exactly one key: "inspectorGuidance" (string).'
         )
         response = client.chat.completions.create(
@@ -118,13 +138,16 @@ def _polish_guidance_openai(section_title: str, source_text: str, api_key: str, 
             messages=[
                 {
                     "role": "system",
-                    "content": "You refine UK fire-door remedial text for tone and clarity only. Output valid JSON only.",
+                    "content": (
+                        "You heavily condense UK fire-door remedial guidance: much shorter, same technical intent, "
+                        "valid JSON only with key inspectorGuidance."
+                    ),
                 },
                 {"role": "user", "content": prompt},
             ],
             response_format={"type": "json_object"},
             temperature=0.2,
-            max_tokens=2500,
+            max_tokens=1400,
         )
         raw = (response.choices[0].message.content or "").strip()
         m = re.search(r"\{[\s\S]*\}", raw)
@@ -173,6 +196,7 @@ def enrich_response_payload(
 
     final_guidance = source_text
     polished_flag = False
+    target_ratio = _reference_guidance_length_ratio()
     if _polish_enabled() and polish_key and source_text.strip():
         final_guidance, polished_flag = _polish_guidance_openai(
             section_title, source_text, polish_key, polish_model
@@ -185,7 +209,11 @@ def enrich_response_payload(
         "inspectorGuidance": final_guidance,
         "inspectorGuidancePolished": polished_flag,
         "inspectorGuidancePolishModel": polish_model if polished_flag else None,
+        "inspectorGuidanceTargetLengthRatio": round(target_ratio, 2),
     }
+    if polished_flag and source_text.strip():
+        src_n = max(1, len(source_text.strip()))
+        reference["inspectorGuidanceActualLengthRatio"] = round(len(final_guidance.strip()) / src_n, 2)
 
     new_items: List[Dict[str, Any]] = []
     for item in items:
