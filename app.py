@@ -7,7 +7,7 @@ import re
 import time
 import threading
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 import os
 from dotenv import load_dotenv
 from collections import OrderedDict
@@ -210,6 +210,53 @@ JPEG_QUALITY = 65  # Good balance between quality and file size
 # Connection pooling for requests
 session = requests.Session()
 session.headers.update({'User-Agent': 'FireDoorCompliance/1.0'})
+
+# USD -> GBP for cost display (ECB working-day rates via Frankfurter; no API key)
+_fx_usd_gbp_state: Dict[str, Any] = {"rate": None, "ts": 0.0, "date": None, "source": "fallback"}
+
+
+def get_usd_to_gbp_rate() -> Tuple[float, str, Optional[str]]:
+    """Return (usd_to_gbp_multiplier, source, rate_date_iso). Cached to limit HTTP calls."""
+    ttl = int(os.getenv("FX_CACHE_TTL_SECONDS", "3600"))
+    now = time.time()
+    if _fx_usd_gbp_state["rate"] is not None and (now - float(_fx_usd_gbp_state["ts"])) < ttl:
+        return (
+            float(_fx_usd_gbp_state["rate"]),
+            "cache",
+            _fx_usd_gbp_state.get("date"),
+        )
+    try:
+        timeout = float(os.getenv("FX_REQUEST_TIMEOUT_SECONDS", "5"))
+        r = session.get(
+            "https://api.frankfurter.app/latest?from=USD&to=GBP",
+            timeout=timeout,
+        )
+        r.raise_for_status()
+        data = r.json()
+        rate = float(data["rates"]["GBP"])
+        rate_date = data.get("date")
+        _fx_usd_gbp_state.update({"rate": rate, "ts": now, "date": rate_date, "source": "live"})
+        return rate, "live", rate_date
+    except Exception as e:
+        print(f"USD->GBP rate fetch failed (using fallback): {e}")
+        fb = float(os.getenv("FALLBACK_USD_TO_GBP_RATE", "0.79"))
+        return fb, "fallback", None
+
+
+def gbp_cost_fields(usd_cost: float) -> Dict[str, Any]:
+    """Fields to merge into JSON next to cost_usd; uses live ECB-aligned rate when available."""
+    rate, src, rate_date = get_usd_to_gbp_rate()
+    usd = float(usd_cost)
+    gbp = round(usd * rate, 6)
+    out: Dict[str, Any] = {
+        "cost_gbp": gbp,
+        "fx_usd_to_gbp": round(rate, 6),
+        "fx_gbp_source": src,
+        "fx_gbp_provider": "Frankfurter (ECB working-day rates)" if src in ("live", "cache") else "static_fallback",
+    }
+    if rate_date:
+        out["fx_rate_date"] = rate_date
+    return out
 
 
 def _polish_params_for_gap_analysis(real_api_key: Optional[str], model: Optional[str], provider: str):
@@ -920,6 +967,7 @@ def analyze_gap_with_ai(gap_type, value, unit, api_key, model, provider):
             'output_tokens': output_tokens,
             'cost_usd': cost,
         }
+        response_data.update(gbp_cost_fields(cost))
         
         # Add threshold information
         if gap_type == 'door_thickness':
@@ -1603,8 +1651,9 @@ def analyze_batch_with_ai(measurements_list, compliance_checks_list, api_key, mo
                 'tokens_used': 0,
                 'input_tokens': 0,
                 'output_tokens': 0,
-                'cost_usd': 0
+                'cost_usd': 0,
             }
+            result.update(gbp_cost_fields(0))
             return result
         
         # Only call API for uncached items
@@ -1700,9 +1749,9 @@ def analyze_batch_with_ai(measurements_list, compliance_checks_list, api_key, mo
                 'tokens_used': total_tokens,
                 'input_tokens': input_tokens,
                 'output_tokens': output_tokens,
-                'cost_usd': cost
+                'cost_usd': cost,
             }
-            
+            result.update(gbp_cost_fields(cost))
             return result
         else:
             # All cached (shouldn't reach here, but just in case)
@@ -1712,8 +1761,9 @@ def analyze_batch_with_ai(measurements_list, compliance_checks_list, api_key, mo
                 'tokens_used': 0,
                 'input_tokens': 0,
                 'output_tokens': 0,
-                'cost_usd': 0
+                'cost_usd': 0,
             }
+            result.update(gbp_cost_fields(0))
             return result
         
     except Exception as e:
@@ -1866,6 +1916,7 @@ def analyze_batch_measurements():
                 'complianceCategoryDescription': ai_data.get('complianceCategoryDescription', 'UK fire door compliance standard.')
             })
         
+        _usd = float(ai_result.get('cost_usd', 0) or 0)
         results = {
             'success': True,
             'timestamp': datetime.now().isoformat(),
@@ -1876,8 +1927,9 @@ def analyze_batch_measurements():
                 'tokens_used': ai_result.get('tokens_used', 0),
                 'input_tokens': ai_result.get('input_tokens', 0),
                 'output_tokens': ai_result.get('output_tokens', 0),
-                'cost_usd': ai_result.get('cost_usd', 0)
-            }
+                'cost_usd': _usd,
+                **gbp_cost_fields(_usd),
+            },
         }
         
         return jsonify(results)
@@ -2218,6 +2270,7 @@ Only report visible evidence. Do not speculate."""
                 'input_tokens': input_tokens,
                 'output_tokens': output_tokens,
                 'cost_usd': round(cost, 6),
+                **gbp_cost_fields(round(cost, 6)),
                 'performance': {
                     'total_time': round(time.time() - total_start_time, 2),
                     'image_optimization': round(optimize_time, 2),
