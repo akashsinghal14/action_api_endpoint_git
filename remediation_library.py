@@ -2,9 +2,10 @@
 Reference remedial guidance from fire_inspect_action_list_original.json.
 
 Adds referenceRemediation to API payloads (does not replace actionItems from OpenAI/Claude).
-Optional: one OpenAI call to polish inspectorGuidance, then optional local trim to cap (no second API).
+Optional: one OpenAI call to polish inspectorGuidance; displayed inspectorGuidance is always capped by word count
+(no second API).
 
-Env: REFERENCE_GUIDANCE_TARGET_LENGTH_RATIO (default ~0.42), REFERENCE_GUIDANCE_HARD_MAX_CHAR_RATIO (default ~0.5 of source chars).
+Env: REFERENCE_GUIDANCE_MAX_WORDS (default 20), ENABLE_REFERENCE_GUIDANCE_POLISH.
 """
 from __future__ import annotations
 
@@ -17,6 +18,9 @@ from typing import Any, Dict, List, Optional, Tuple
 _ORIGINAL_DOC_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "data", "fire_inspect_action_list_original.json"
 )
+
+# Bump when referenceRemediation shape or inspectorGuidance rules change (invalidates API caches that skip enrich).
+_REFERENCE_REMEDIATION_FORMAT_VERSION = 1
 
 # Internal measurement_type / gap_type -> exact section "title" in the original JSON
 MEASUREMENT_TO_SECTION_TITLE: Dict[str, str] = {
@@ -52,44 +56,25 @@ def _polish_enabled() -> bool:
     return os.getenv("ENABLE_REFERENCE_GUIDANCE_POLISH", "true").lower() in ("1", "true", "yes")
 
 
-def _reference_guidance_length_ratio() -> float:
-    """Ideal target vs source length for the model prompt. Clamped to 0.35–0.70."""
+def _max_guidance_words() -> int:
+    """Hard cap on words shown in inspectorGuidance (PDF captions)."""
     try:
-        r = float(os.getenv("REFERENCE_GUIDANCE_TARGET_LENGTH_RATIO", "0.42"))
+        n = int(os.getenv("REFERENCE_GUIDANCE_MAX_WORDS", "20"))
     except ValueError:
-        r = 0.42
-    return max(0.35, min(0.70, r))
+        n = 20
+    return max(8, min(40, n))
 
 
-def _hard_max_output_chars(src_len: int, ratio: float) -> int:
-    """
-    Absolute ceiling on polished output length (fraction of source).
-    Default keeps output at or below ~50% of source unless trimmed further.
-    """
-    try:
-        cap = float(os.getenv("REFERENCE_GUIDANCE_HARD_MAX_CHAR_RATIO", "0.5"))
-    except ValueError:
-        cap = 0.5
-    cap = max(ratio + 0.02, min(0.62, cap))
-    return max(100, int(src_len * cap))
-
-
-def _trim_guidance_to_limit(text: str, limit: int) -> Tuple[str, bool]:
-    """Shorten text without a second API call; prefer sentence boundaries."""
-    text = text.strip()
-    if len(text) <= limit:
+def _clamp_guidance_to_word_limit(text: str, max_words: int) -> Tuple[str, bool]:
+    """Ensure text does not exceed max_words (split on whitespace). No second API call."""
+    text = (text or "").strip()
+    if not text:
         return text, False
-    truncated = text[:limit]
-    for sep in (".\n\n", ".\n", ". ", "?", "!", "\n\n"):
-        idx = truncated.rfind(sep)
-        min_keep = max(50, int(limit * 0.35))
-        if idx >= min_keep:
-            out = text[: idx + len(sep)].strip()
-            return out, True
-    sp = truncated.rfind(" ")
-    if sp >= max(40, int(limit * 0.3)):
-        return truncated[:sp].rstrip(",;:").strip() + "…", True
-    return truncated.rstrip().rstrip(",;:") + "…", True
+    words = text.split()
+    if len(words) <= max_words:
+        return text, False
+    clipped = " ".join(words[:max_words]).rstrip(",;:")
+    return clipped + "…", True
 
 
 def _load_sections() -> Dict[str, str]:
@@ -137,33 +122,28 @@ def get_section_for_measurement(measurement_type: str) -> Optional[Tuple[str, st
     return title, text
 
 
-def _polish_guidance_openai(section_title: str, source_text: str, api_key: str, model: str) -> Tuple[str, bool, bool]:
-    """Return (text_to_use, was_polished, was_trimmed). On failure returns (source_text, False, False)."""
+def _polish_guidance_openai(
+    section_title: str, source_text: str, api_key: str, model: str, max_words: int
+) -> Tuple[str, bool]:
+    """Single OpenAI call: ultra-short UK caption. Word cap enforced again in enrich. Returns (text, was_polished)."""
     if not source_text.strip():
-        return source_text, False, False
+        return source_text, False
     try:
         import openai
 
-        ratio = _reference_guidance_length_ratio()
         src_stripped = source_text.strip()
-        src_len = len(src_stripped)
-        target_chars = max(90, int(src_len * ratio))
-        hard_max = _hard_max_output_chars(src_len, ratio)
 
         client = openai.OpenAI(api_key=api_key)
         prompt = (
             f"SECTION TITLE:\n{section_title}\n\n"
-            f"SOURCE TEXT (obligations and facts must survive in shortened form — keep all mm figures, BS/EN refs, "
-            f"product names; do not invent; do not soften mandatory actions into vague advice):\n{src_stripped}\n\n"
-            "WRITE FOR A UK FIRE DOOR INSPECTION REGISTER — ONE PASS:\n"
-            f"- HARD LIMIT: the string inspectorGuidance MUST be at most {hard_max} characters (including spaces and "
-            f"newlines). The source is {src_len} characters; aim ~{target_chars}.\n"
-            "- Voice: direct imperatives (e.g. Rectify…, Replace…, Reinstate…, Confirm…). No filler, no preamble, "
-            "no sign-off. No \"it is important\" / \"should consider\" unless the source uses a legal must.\n"
-            "- Prefer 2–4 short sentences in one block, OR up to 5 lines each starting with \"- \" for distinct "
-            "actions if that reads clearer. Every line must carry a requirement or fact.\n"
-            "- If you must omit detail to meet the character limit, drop repetition only — never drop a number, "
-            "standard name, or non-negotiable action from the source.\n\n"
+            f"SOURCE:\n{src_stripped}\n\n"
+            f"Produce ONE remediation caption for a PDF photo label (UK fire door survey).\n\n"
+            f"ABSOLUTE RULE: inspectorGuidance must contain AT MOST {max_words} words (split on whitespace). "
+            f"Be as short as clarity allows; never exceed {max_words} words.\n"
+            "- Voice: direct imperatives (Rectify, Replace, Reinstate, Adjust, Confirm…). British English.\n"
+            "- Preserve every numeric value (mm), BS/EN reference, and non‑negotiable action from the source; "
+            "_drop explanatory filler only_. Do not invent facts.\n"
+            "- Single sentence preferred; two short sentences only if essential. No bullet lists. No preamble.\n\n"
             'Return JSON: {"inspectorGuidance": "<string>"}'
         )
         response = client.chat.completions.create(
@@ -172,32 +152,28 @@ def _polish_guidance_openai(section_title: str, source_text: str, api_key: str, 
                 {
                     "role": "system",
                     "content": (
-                        "You produce very short, authoritative UK fire-door remedial text in one reply. "
-                        "Respect the user's hard character limit. Output valid JSON only with key inspectorGuidance."
+                        f"You write fire-door remediation captions for PDF labels: maximum {max_words} words in "
+                        "inspectorGuidance. Valid JSON only."
                     ),
                 },
                 {"role": "user", "content": prompt},
             ],
             response_format={"type": "json_object"},
             temperature=0.15,
-            max_tokens=900,
+            max_tokens=220,
         )
         raw = (response.choices[0].message.content or "").strip()
         m = re.search(r"\{[\s\S]*\}", raw)
         if not m:
-            return source_text, False, False
+            return source_text, False
         parsed = json.loads(m.group(0))
         polished = parsed.get("inspectorGuidance")
         if not polished or not isinstance(polished, str):
-            return source_text, False, False
-        polished = polished.strip()
-        trimmed = False
-        if len(polished) > hard_max:
-            polished, trimmed = _trim_guidance_to_limit(polished, hard_max)
-        return polished, True, trimmed
+            return source_text, False
+        return polished.strip(), True
     except Exception as e:
         print(f"Reference guidance polish failed: {e}")
-        return source_text, False, False
+        return source_text, False
 
 
 def enrich_response_payload(
@@ -208,9 +184,10 @@ def enrich_response_payload(
 ) -> Dict[str, Any]:
     """
     Add referenceRemediation (verbatim source + polished inspectorGuidance when OpenAI available).
+    inspectorGuidance is always clamped to REFERENCE_GUIDANCE_MAX_WORDS (default 20).
 
-    If payload already contains referenceRemediation for the same remediationKey, returns payload
-    unchanged (avoids double polish on cache hits).
+    If payload already contains referenceRemediation for the same remediationKey and format version,
+    returns payload unchanged (avoids double polish on cache hits).
     """
     if not _templates_enabled():
         return payload
@@ -226,35 +203,38 @@ def enrich_response_payload(
 
     existing = payload.get("referenceRemediation")
     if isinstance(existing, dict) and existing.get("remediationKey") == measurement_type:
-        return payload
+        if existing.get("referenceRemediationFormatVersion") == _REFERENCE_REMEDIATION_FORMAT_VERSION:
+            return payload
 
     polish_key = polish_openai_key or os.getenv("OPENAI_API_KEY")
     polish_model = polish_model or os.getenv("OPENAI_REFERENCE_POLISH_MODEL", "gpt-4o-mini")
+    max_words = _max_guidance_words()
 
     final_guidance = source_text
     polished_flag = False
-    trimmed_flag = False
-    target_ratio = _reference_guidance_length_ratio()
     if _polish_enabled() and polish_key and source_text.strip():
-        final_guidance, polished_flag, trimmed_flag = _polish_guidance_openai(
-            section_title, source_text, polish_key, polish_model
+        final_guidance, polished_flag = _polish_guidance_openai(
+            section_title, source_text, polish_key, polish_model, max_words
         )
 
+    final_guidance, word_clamped = _clamp_guidance_to_word_limit(final_guidance.strip(), max_words)
+    wc = len(final_guidance.split())
+
     reference: Dict[str, Any] = {
+        "referenceRemediationFormatVersion": _REFERENCE_REMEDIATION_FORMAT_VERSION,
         "remediationKey": measurement_type,
         "sourceSectionTitle": section_title,
         "inspectorGuidanceSource": source_text,
         "inspectorGuidance": final_guidance,
         "inspectorGuidancePolished": polished_flag,
         "inspectorGuidancePolishModel": polish_model if polished_flag else None,
-        "inspectorGuidanceTargetLengthRatio": round(target_ratio, 2),
+        "inspectorGuidanceMaxWords": max_words,
+        "inspectorGuidanceWordCount": wc,
+        "inspectorGuidanceWordClamped": word_clamped,
+        "inspectorGuidanceTrimmed": word_clamped,
     }
-    if polished_flag:
-        src_n = max(1, len(source_text.strip()))
-        hard = _hard_max_output_chars(src_n, target_ratio)
-        reference["inspectorGuidanceHardMaxCharRatio"] = round(hard / src_n, 3)
-        reference["inspectorGuidanceActualLengthRatio"] = round(len(final_guidance.strip()) / src_n, 2)
-        reference["inspectorGuidanceTrimmed"] = trimmed_flag
+    src_n = max(1, len(source_text.strip()))
+    reference["inspectorGuidanceActualLengthRatio"] = round(len(final_guidance.strip()) / src_n, 2)
 
     new_items: List[Dict[str, Any]] = []
     for item in items:
