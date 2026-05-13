@@ -7,7 +7,7 @@ import re
 import time
 import threading
 from datetime import datetime, timedelta
-from typing import Optional, Dict, Any, Tuple
+from typing import Optional, Dict, Any, Tuple, List
 import os
 from dotenv import load_dotenv
 from collections import OrderedDict
@@ -18,6 +18,11 @@ from PIL import Image
 import io
 
 from remediation_library import enrich_response_payload
+from severity_classifier import (
+    confidence_score_for_severity,
+    normalize_llm_severities,
+    severity_for_noncompliant_measurement,
+)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -455,6 +460,67 @@ def get_due_date(severity: str) -> str:
     
     return date.strftime('%d/%m/%Y')
 
+
+def _inspector_severity_prompt_block() -> str:
+    """Embedded in OpenAI/Claude prompts — model chooses severity; API does not overwrite."""
+    return """
+SEVERITY (you MUST set "severity" on every action item — no placeholders):
+Use exactly one of: critical | high | medium | low for each action item. Base this ONLY on the rules below and the measurement in Data (do not escalate gap severity because the mm value is far over 4mm — for head/hinge/closing/threshold gaps over 4mm, use medium).
+
+HIGH — door cannot reliably perform its fire-safety function:
+- Door fails to close fully on its own (any cause: closer, alignment, obstruction)
+- Self-closer missing, broken, or not closing the door reliably
+- Door handle missing on the inside (occupant cannot exit in fire)
+- Damage to the door leaf in the locking/closing area (latch, rebate, edge near latch)
+- Frame damage so severe the door no longer seats properly AND self-closer is also affected
+- Hinges not fire-rated and showing signs of failure
+
+MEDIUM — out of spec, needs remediation, door still functions:
+- Any gap (head, hinge, threshold, side/closing) measured greater than 4 mm — regardless of how much greater
+- Glazing not pyro/fire-rated
+- Intumescent strips missing or damaged
+- Cold smoke seals missing or damaged
+- Threshold seal missing (including typical 20 mm threshold cases)
+- Frame damage that can be repaired rather than replaced
+- Door bottom needs trimming for clearance
+- Handle/latch requires replacement (functional, not missing entirely)
+- Door doesn't fit correctly in frame (warping/settlement) but still closes
+- Door thickness / frame depth / door size out of spec (non-compliant numeric checks)
+
+LOW — cosmetic or administrative, no fire-performance impact:
+- "Fire Door Keep Shut" / "Keep Locked" signage missing
+- One or two missing hinge screws where hinge still holds
+- Cosmetic damage to handle, lock, or latch (still operates)
+- Replacement of cosmetic hardware where existing still works
+- Certification label not visible / administrative visibility issues (no immediate door failure)
+
+CRITICAL — use sparingly: only for compound or imminent life-safety failure beyond a single HIGH item; otherwise prefer HIGH at most.
+
+Set "dueDate" to "DD/MM/YYYY" as a placeholder; the API will replace it from your severity.
+"""
+
+
+def _aggregate_severity_from_action_items(action_items: List[Dict[str, Any]]) -> str:
+    """Roll up per-item severities for top-level response (same precedence as before)."""
+    if not action_items:
+        return "medium"
+    severities = [str(item.get("severity", "medium")).lower() for item in action_items]
+    if "critical" in severities:
+        return "critical"
+    if "high" in severities:
+        return "high"
+    if "medium" in severities:
+        return "medium"
+    if "low" in severities:
+        return "low"
+    return "medium"
+
+
+def _sync_action_item_due_dates_from_severity(action_items: List[Dict[str, Any]]) -> None:
+    """Align due dates with each item's severity after model output + normalization."""
+    for item in action_items:
+        item["dueDate"] = get_due_date(item.get("severity", "medium"))
+
 def calculate_openai_cost(model, input_tokens, output_tokens):
     """Calculate cost based on OpenAI pricing (as of 2024)"""
     pricing = {
@@ -619,7 +685,7 @@ RULES:
 Data: {survey_text}
 
 IMPORTANT: For boolean measurements, if the value is "no", the door is NON-COMPLIANT and you MUST provide action items.
-
+{_inspector_severity_prompt_block()}
 Return JSON:
 {{
     "actionItems": [
@@ -739,7 +805,7 @@ RULES:
 Data: {survey_text}
 
 IMPORTANT: For boolean measurements, if the value is "no", the door is NON-COMPLIANT and you MUST provide action items.
-
+{_inspector_severity_prompt_block()}
 Return JSON:
 {{
     "actionItems": [
@@ -805,8 +871,8 @@ If compliant (all measurements meet requirements), return empty actionItems arra
 def analyze_gap_with_ai(gap_type, value, unit, api_key, model, provider):
     """Analyze gap with AI provider - with caching"""
     try:
-        # Create cache key
-        cache_key = f"{gap_type}:{value}:{unit}:{provider}:{model}"
+        # Create cache key (suffix bumps cache when severity policy changes)
+        cache_key = f"{gap_type}:{value}:{unit}:{provider}:{model}:promptsev1"
         
         # Check cache first
         if ENABLE_CACHING:
@@ -906,6 +972,8 @@ def analyze_gap_with_ai(gap_type, value, unit, api_key, model, provider):
             print(f"Parsed action items for {gap_type}: {len(action_items)} items")
             print(f"Cost for {gap_type}: ${cost} (Input: {input_tokens}, Output: {output_tokens})")
 
+        normalize_llm_severities(action_items)
+
         # Determine compliance
         if gap_type == 'door_thickness':
             min_thickness = 44
@@ -936,18 +1004,14 @@ def analyze_gap_with_ai(gap_type, value, unit, api_key, model, provider):
                 compliant = False
             min_thickness = None
 
-        # Determine severity
-        ai_severity = 'none'
-        if action_items:
-            severities = [item.get('severity', 'low') for item in action_items]
-            if 'critical' in severities:
-                ai_severity = 'critical'
-            elif 'high' in severities:
-                ai_severity = 'high'
-            elif 'medium' in severities:
-                ai_severity = 'medium'
-            elif 'low' in severities:
-                ai_severity = 'low'
+        if not compliant:
+            _sync_action_item_due_dates_from_severity(action_items)
+
+        ai_severity = (
+            "none"
+            if compliant
+            else _aggregate_severity_from_action_items(action_items)
+        )
 
         # Build response
         response_data = {
@@ -1097,27 +1161,27 @@ def warm_cache_automatically():
                 
                 # Call the appropriate function based on measurement type
                 if measurement_type == 'intustrips':
-                    result = handle_boolean_measurement_internal('intumescent_strips', str(value), api_key, model, ai_provider, 'critical')
+                    result = handle_boolean_measurement_internal('intumescent_strips', str(value), api_key, model, ai_provider)
                 elif measurement_type == 'selfclosing':
-                    result = handle_boolean_measurement_internal('self_closing_device', str(value), api_key, model, ai_provider, 'critical')
+                    result = handle_boolean_measurement_internal('self_closing_device', str(value), api_key, model, ai_provider)
                 elif measurement_type == 'shutsign':
-                    result = handle_boolean_measurement_internal('keep_shut_sign', str(value), api_key, model, ai_provider, 'medium')
+                    result = handle_boolean_measurement_internal('keep_shut_sign', str(value), api_key, model, ai_provider)
                 elif measurement_type == 'holddevice':
-                    result = handle_boolean_measurement_internal('hold_open_device', str(value), api_key, model, ai_provider, 'medium')
+                    result = handle_boolean_measurement_internal('hold_open_device', str(value), api_key, model, ai_provider)
                 elif measurement_type == 'certivisible':
-                    result = handle_boolean_measurement_internal('certification_visible', str(value), api_key, model, ai_provider, 'high')
+                    result = handle_boolean_measurement_internal('certification_visible', str(value), api_key, model, ai_provider)
                 elif measurement_type == 'glazing':
-                    result = handle_boolean_measurement_internal('glazing', str(value), api_key, model, ai_provider, 'medium')
+                    result = handle_boolean_measurement_internal('glazing', str(value), api_key, model, ai_provider)
                 elif measurement_type == 'pyroglazing':
-                    result = handle_boolean_measurement_internal('pyro_glazing', str(value), api_key, model, ai_provider, 'high')
+                    result = handle_boolean_measurement_internal('pyro_glazing', str(value), api_key, model, ai_provider)
                 elif measurement_type == 'doorclosefully':
-                    result = handle_boolean_measurement_internal('door_close_fully', str(value), api_key, model, ai_provider, 'critical')
+                    result = handle_boolean_measurement_internal('door_close_fully', str(value), api_key, model, ai_provider)
                 elif measurement_type == 'hingesfirerated':
-                    result = handle_boolean_measurement_internal('hinges_fire_rated', str(value), api_key, model, ai_provider, 'critical')
+                    result = handle_boolean_measurement_internal('hinges_fire_rated', str(value), api_key, model, ai_provider)
                 elif measurement_type == 'coldsmokeseals':
-                    result = handle_boolean_measurement_internal('cold_smoke_seals', str(value), api_key, model, ai_provider, 'critical')
+                    result = handle_boolean_measurement_internal('cold_smoke_seals', str(value), api_key, model, ai_provider)
                 elif measurement_type == 'keepLockedSign':
-                    result = handle_boolean_measurement_internal('keep_locked_sign', str(value), api_key, model, ai_provider, 'high')
+                    result = handle_boolean_measurement_internal('keep_locked_sign', str(value), api_key, model, ai_provider)
             
             if result and result.get('success'):
                 analysis_type = result.get('analysis_type', 'unknown')
@@ -1275,7 +1339,7 @@ def handle_numeric_measurement_internal(gap_type, value, unit, api_key, model, a
         # Generate static action items
         action_items = []
         if not is_compliant:
-            severity = 'critical' if threshold_type == 'max_allowed' else 'medium'
+            severity = severity_for_noncompliant_measurement(gap_type)
             category = get_category_for_measurement(gap_type)
             
             if threshold_type == 'max_allowed':
@@ -1293,7 +1357,7 @@ def handle_numeric_measurement_internal(gap_type, value, unit, api_key, model, a
                     {'option': 'Option 2:', 'plan': f'Quality solution for {gap_type.replace("_", " ")}.'},
                     {'option': 'Option 3:', 'plan': f'Premium solution with professional testing.'},
                 ],
-                'confidenceScore': 98 if threshold_type == 'max_allowed' else 85,
+                'confidenceScore': confidence_score_for_severity(severity),
                 'complianceCategory': get_compliance_category(gap_type, description),
             })
         
@@ -1322,9 +1386,10 @@ def handle_numeric_measurement_internal(gap_type, value, unit, api_key, model, a
         print(f"Error in handle_numeric_measurement_internal: {e}")
         return None
 
-def handle_boolean_measurement_internal(measurement_type, value, api_key, model, ai_provider, default_severity):
+def handle_boolean_measurement_internal(measurement_type, value, api_key, model, ai_provider, default_severity=None):
     """Handle boolean measurements internally for cache warming"""
     try:
+        sev = severity_for_noncompliant_measurement(measurement_type)
         is_compliant = value.lower() == 'yes'
         
         action_items = []
@@ -1345,16 +1410,16 @@ def handle_boolean_measurement_internal(measurement_type, value, api_key, model,
                 description = f'{measurement_type.replace("_", " ").title()} is missing. This is critical for fire door compliance.'
                 
                 action_items.append({
-                    'severity': default_severity,
+                    'severity': sev,
                     'category': category,
-                    'dueDate': get_due_date(default_severity),
+                    'dueDate': get_due_date(sev),
                     'actionDescription': description,
                     'remediationOptions': [
                         {'option': 'Option 1:', 'plan': f'Install basic {measurement_type.replace("_", " ")} immediately.'},
                         {'option': 'Option 2:', 'plan': f'Install quality {measurement_type.replace("_", " ")} with proper setup.'},
                         {'option': 'Option 3:', 'plan': f'Complete {measurement_type.replace("_", " ")} installation with testing.'},
                     ],
-                    'confidenceScore': 98 if default_severity == 'critical' else (95 if default_severity == 'high' else 85),
+                    'confidenceScore': confidence_score_for_severity(sev),
                     'complianceCategory': get_compliance_category(measurement_type, description),
                 })
         
@@ -1363,7 +1428,7 @@ def handle_boolean_measurement_internal(measurement_type, value, api_key, model,
             'measurement_type': measurement_type,
             'value': value,
             'compliant': is_compliant,
-            'severity': default_severity if not is_compliant else 'none',
+            'severity': sev if not is_compliant else 'none',
             'actionItems': action_items,
             'timestamp': datetime.now().isoformat(),
             'analysis_type': 'ai' if (api_key and not is_compliant) else 'static',
@@ -1419,17 +1484,18 @@ def slim_head(value=None, unit=None):
         action_items = []
         if not is_compliant:
             description = f'Head gap ({value}mm) exceeds maximum allowed ({max_gap}mm).'
+            sev = severity_for_noncompliant_measurement('head')
             action_items.append({
-                'severity': 'critical',
+                'severity': sev,
                 'category': get_category_for_measurement('head'),
-                'dueDate': get_due_date('critical'),
+                'dueDate': get_due_date(sev),
                 'actionDescription': description,
                 'remediationOptions': [
                     {'option': 'Option 1: Basic Strips', 'plan': 'Install basic intumescent strips at the head.'},
                     {'option': 'Option 2: Quality Strips', 'plan': 'Install high-quality strips; adjust alignment if needed.'},
                     {'option': 'Option 3: ', 'plan': 'Premium strips with smoke seals and full alignment.'},
                 ],
-                'confidenceScore': 92,
+                'confidenceScore': confidence_score_for_severity(sev),
                 'complianceCategory': get_compliance_category('head', description),
             })
 
@@ -1440,7 +1506,7 @@ def slim_head(value=None, unit=None):
             'unit': unit,
             'compliant': is_compliant,
             'max_allowed': max_gap,
-            'severity': 'critical' if not is_compliant else 'none',
+            'severity': sev if not is_compliant else 'none',
             'actionItems': action_items,
             'timestamp': datetime.now().isoformat(),
             'analysis_type': 'ai' if (api_key and not is_compliant) else 'static',
@@ -1517,27 +1583,27 @@ def analyze_measurement():
             
             # Call the appropriate function based on measurement type
             if measurement_type == 'intustrips':
-                return handle_boolean_measurement_unified('intumescent_strips', value, api_key, model, ai_provider, 'critical', 'intustrips')
+                return handle_boolean_measurement_unified('intumescent_strips', value, api_key, model, ai_provider, original_measurement_type='intustrips')
             elif measurement_type == 'selfclosing':
-                return handle_boolean_measurement_unified('self_closing_device', value, api_key, model, ai_provider, 'critical', 'selfclosing')
+                return handle_boolean_measurement_unified('self_closing_device', value, api_key, model, ai_provider, original_measurement_type='selfclosing')
             elif measurement_type == 'shutsign':
-                return handle_boolean_measurement_unified('keep_shut_sign', value, api_key, model, ai_provider, 'medium', 'shutsign')
+                return handle_boolean_measurement_unified('keep_shut_sign', value, api_key, model, ai_provider, original_measurement_type='shutsign')
             elif measurement_type == 'holddevice':
-                return handle_boolean_measurement_unified('hold_open_device', value, api_key, model, ai_provider, 'medium', 'holddevice')
+                return handle_boolean_measurement_unified('hold_open_device', value, api_key, model, ai_provider, original_measurement_type='holddevice')
             elif measurement_type == 'certivisible':
-                return handle_boolean_measurement_unified('certification_visible', value, api_key, model, ai_provider, 'high', 'certivisible')
+                return handle_boolean_measurement_unified('certification_visible', value, api_key, model, ai_provider, original_measurement_type='certivisible')
             elif measurement_type == 'glazing':
-                return handle_boolean_measurement_unified('glazing', value, api_key, model, ai_provider, 'medium', 'glazing')
+                return handle_boolean_measurement_unified('glazing', value, api_key, model, ai_provider, original_measurement_type='glazing')
             elif measurement_type == 'pyroglazing':
-                return handle_boolean_measurement_unified('pyro_glazing', value, api_key, model, ai_provider, 'high', 'pyroglazing')
+                return handle_boolean_measurement_unified('pyro_glazing', value, api_key, model, ai_provider, original_measurement_type='pyroglazing')
             elif measurement_type == 'doorclosefully':
-                return handle_boolean_measurement_unified('door_close_fully', value, api_key, model, ai_provider, 'critical', 'doorclosefully')
+                return handle_boolean_measurement_unified('door_close_fully', value, api_key, model, ai_provider, original_measurement_type='doorclosefully')
             elif measurement_type == 'hingesfirerated':
-                return handle_boolean_measurement_unified('hinges_fire_rated', value, api_key, model, ai_provider, 'critical', 'hingesfirerated')
+                return handle_boolean_measurement_unified('hinges_fire_rated', value, api_key, model, ai_provider, original_measurement_type='hingesfirerated')
             elif measurement_type == 'coldsmokeseals':
-                return handle_boolean_measurement_unified('cold_smoke_seals', value, api_key, model, ai_provider, 'critical', 'coldsmokeseals')
+                return handle_boolean_measurement_unified('cold_smoke_seals', value, api_key, model, ai_provider, original_measurement_type='coldsmokeseals')
             elif measurement_type == 'keepLockedSign':
-                return handle_boolean_measurement_unified('keep_locked_sign', value, api_key, model, ai_provider, 'high', 'keepLockedSign')
+                return handle_boolean_measurement_unified('keep_locked_sign', value, api_key, model, ai_provider, original_measurement_type='keepLockedSign')
         
     except Exception as e:
         return jsonify({'error': f'Analysis failed: {str(e)}'}), 500
@@ -1963,7 +2029,7 @@ def handle_numeric_measurement_unified(gap_type, value, unit, api_key, model, ai
         # Generate static action items
         action_items = []
         if not is_compliant:
-            severity = 'critical' if threshold_type == 'max_allowed' else 'medium'
+            severity = severity_for_noncompliant_measurement(gap_type)
             category = get_category_for_measurement(gap_type)
             
             if threshold_type == 'max_allowed':
@@ -1981,7 +2047,7 @@ def handle_numeric_measurement_unified(gap_type, value, unit, api_key, model, ai
                     {'option': 'Option 2:', 'plan': f'Quality solution for {gap_type.replace("_", " ")}.'},
                     {'option': 'Option 3:', 'plan': f'Premium solution with professional testing.'},
                 ],
-                'confidenceScore': 98 if threshold_type == 'max_allowed' else 85,
+                'confidenceScore': confidence_score_for_severity(severity),
                 'complianceCategory': get_compliance_category(gap_type, description),
             })
         
@@ -2008,9 +2074,10 @@ def handle_numeric_measurement_unified(gap_type, value, unit, api_key, model, ai
     except Exception as e:
         return jsonify({'error': f'{gap_type} analysis failed: {str(e)}'}), 500
 
-def handle_boolean_measurement_unified(measurement_type, value, api_key, model, ai_provider, default_severity, original_measurement_type=None):
+def handle_boolean_measurement_unified(measurement_type, value, api_key, model, ai_provider, default_severity=None, original_measurement_type=None):
     """Handle boolean measurements with AI provider support"""
     try:
+        sev = severity_for_noncompliant_measurement(measurement_type)
         is_compliant = value.lower() == 'yes'
         
         action_items = []
@@ -2034,16 +2101,16 @@ def handle_boolean_measurement_unified(measurement_type, value, api_key, model, 
                 description = f'{measurement_type.replace("_", " ").title()} is missing. This is critical for fire door compliance.'
                 
                 action_items.append({
-                    'severity': default_severity,
+                    'severity': sev,
                     'category': category,
-                    'dueDate': get_due_date(default_severity),
+                    'dueDate': get_due_date(sev),
                     'actionDescription': description,
                     'remediationOptions': [
                         {'option': 'Option 1:', 'plan': f'Install basic {measurement_type.replace("_", " ")} immediately.'},
                         {'option': 'Option 2:', 'plan': f'Install quality {measurement_type.replace("_", " ")} with proper setup.'},
                         {'option': 'Option 3:', 'plan': f'Complete {measurement_type.replace("_", " ")} installation with testing.'},
                     ],
-                    'confidenceScore': 98 if default_severity == 'critical' else (95 if default_severity == 'high' else 85),
+                    'confidenceScore': confidence_score_for_severity(sev),
                     'complianceCategory': get_compliance_category(measurement_type, description),
                 })
         
@@ -2055,7 +2122,7 @@ def handle_boolean_measurement_unified(measurement_type, value, api_key, model, 
             'measurement_type': response_measurement_type,
             'value': value,
             'compliant': is_compliant,
-            'severity': default_severity if not is_compliant else 'none',
+            'severity': sev if not is_compliant else 'none',
             'actionItems': action_items,
             'timestamp': datetime.now().isoformat(),
             'analysis_type': 'ai' if (api_key and not is_compliant) else 'static',
